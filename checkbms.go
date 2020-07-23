@@ -54,7 +54,7 @@ type BmsFile struct {
 	HeaderWav []definition
 	HeaderBmp []definition
 	HeaderNumbering []definition
-	Pattern []string
+	Pattern []definition
 	Keymode int // 5, 7, 9, 10, 14, 24, 48
 	TotalNotes int
 	Logs []string
@@ -66,7 +66,7 @@ func NewBmsFile(path string) *BmsFile {
 	bf.HeaderWav = make([]definition, 0)
 	bf.HeaderBmp = make([]definition, 0)
 	bf.HeaderNumbering = make([]definition, 0)
-	bf.Pattern = make([]string, 0)
+	bf.Pattern = make([]definition, 0)
 	bf.Logs = make([]string, 0)
 	return &bf
 }
@@ -297,7 +297,7 @@ func scanBmsDirectory(path string, isRootDir bool) (*Directory, error) {
 		if isBmsPath(f.Name()) {
 			var bmsfile *BmsFile
 			if filepath.Ext(filePath) == ".bmson" {
-				bmsfile = NewBmsFile(filePath) // TODO 仮
+				bmsfile = NewBmsFile(filePath) // TODO 仮 loadBmson作る
 				//bmsfile, err := LoadBmson(bmspath)
 			} else {
 				if isUtf8, err := isUTF8(filePath); err == nil && isUtf8 {
@@ -325,24 +325,6 @@ func scanBmsDirectory(path string, isRootDir bool) (*Directory, error) {
 	}
 
 	return dir, nil
-}
-
-func hasExts(path string, exts *[]string) bool {
-	for _, ext := range *exts {
-		if strings.ToLower(ext) == strings.ToLower(filepath.Ext(path)) {
-			return true
-		}
-	}
-	return false
-}
-
-func isBmsPath(path string) bool {
-	bmsExts := []string{".bms", ".bme", ".bml", ".pms", ".bmson"}
-	return hasExts(path, &bmsExts)
-}
-
-func containsEnvironmentDependentRune(text string) bool {
-	return !regexp.MustCompile(`^[0-9a-zA-Z !#$%&'\(\)\-\+\^@\[\];,\.=~\{\}_]+$`).MatchString(text)
 }
 
 func loadBmsFile(path string) (*BmsFile, error) {
@@ -454,7 +436,7 @@ func loadBmsFile(path string) (*BmsFile, error) {
 		if !correctLine {
 			if regexp.MustCompile(`#[0-9a-z]{5}:.+`).MatchString(strings.ToLower(line)) {
 				data := strings.TrimSpace(line[7:])
-				bmsFile.Pattern = append(bmsFile.Pattern, line)
+				bmsFile.Pattern = append(bmsFile.Pattern, definition{strings.ToLower(line[1:6]), strings.ToLower(data)})
 				correctLine = true
 				chint, _ := strconv.Atoi(line[4:6])
 				if (chint >= 18 && chint <= 19) || (chint >= 38 && chint <= 39) {
@@ -480,7 +462,7 @@ func loadBmsFile(path string) (*BmsFile, error) {
 				if strings.HasPrefix(strings.ToLower(line), "#" + command + " ") || strings.ToLower(line) == ("#" + command) {
 					/*length := utf8.RuneCountInString(command) + 1
 					  data := strings.TrimSpace(line[length:])*/
-					bmsFile.Pattern = append(bmsFile.Pattern, line)
+					bmsFile.Pattern = append(bmsFile.Pattern, definition{strings.ToLower(line[1:6]), strings.ToLower(line[7:])})
 					correctLine = true
 					break
 				}
@@ -488,7 +470,7 @@ func loadBmsFile(path string) (*BmsFile, error) {
 		}
 		if !correctLine {
 			if regexp.MustCompile(`#[0-9]{3}sc:.+`).MatchString(strings.ToLower(line)) {
-				bmsFile.Pattern = append(bmsFile.Pattern, line)
+				bmsFile.Pattern = append(bmsFile.Pattern, definition{strings.ToLower(line[1:6]), strings.ToLower(line[7:])})
 				correctLine = true
 			}
 		}
@@ -519,22 +501,156 @@ func loadBmsFile(path string) (*BmsFile, error) {
 	return bmsFile, nil
 }
 
-func isUTF8(path string) (bool, error) {
-	fBytes, err := ioutil.ReadFile(path)
-	if err != nil {
-		return false, err
+func checkBmsFile(bmsFile *BmsFile) {
+	for _, command := range COMMANDS {
+		val, ok := bmsFile.Header[command.Name]
+		if !ok {
+			if command.Necessity != Unnecessary {
+				alertLevel := "ERROR"
+				if command.Necessity == Semi_necessary {
+					alertLevel = "WARNING"
+				}
+				bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("%s: #%s definition is missing", alertLevel, strings.ToUpper(command.Name)))
+			}
+		} else if val == "" {
+			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: #%s value is empty", strings.ToUpper(command.Name)))
+		} else if isInRange, err := command.IsInRange(val); err != nil || !isInRange {
+			if err != nil {
+				fmt.Println("DEBUG ERROR: IsInRange return error")
+			}
+			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("ERROR: #%s has invalid value: %s", strings.ToUpper(command.Name), val))
+		} else if command.Name == "rank" { // ここらへんはCommand型のCheck関数的なものに置き換えたい
+			rank, _ := strconv.Atoi(val)
+			if rank == 0 {
+				bmsFile.Logs = append(bmsFile.Logs, "NOTICE: #RANK is 0(VERY HARD)")
+			} else if rank == 1 {
+				bmsFile.Logs = append(bmsFile.Logs, "NOTICE: #RANK is 1(HARD)")
+			} else if rank == 4 {
+				bmsFile.Logs = append(bmsFile.Logs, "NOTICE: #RANK is 4(VERY EASY)")
+			}
+		} else if command.Name == "total" {
+			total, _ := strconv.ParseFloat(val, 64)
+			if total < 100 {
+				bmsFile.Logs = append(bmsFile.Logs, "WARNING: #TOTAL is under 100: " + val)
+			} else {
+				defaultTotal := bmsFile.CalculateDefaultTotal()
+				overRate := 1.6
+				totalPerNotes := total / float64(bmsFile.TotalNotes) // TODO 適切な基準値は？
+				if total > defaultTotal * overRate && totalPerNotes > 0.35 {
+					bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("NOTICE: #TOTAL is too high(TotalNotes=%d): %s", bmsFile.TotalNotes, val))
+				} else if total < defaultTotal / overRate && totalPerNotes < 0.2 {
+					bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("NOTICE: #TOTAL is too low(TotalNotes=%d): %s", bmsFile.TotalNotes, val))
+				}
+			}
+		} else if command.Name == "defexrank" {
+			bmsFile.Logs = append(bmsFile.Logs, "NOTICE: #DEFEXRANK is defined: " + val)
+		}
 	}
 
-	det := chardet.NewTextDetector()
-	detResult, err := det.DetectBest(fBytes)
-	if err != nil {
-		fmt.Println("Detect error:", err.Error())
-		return false, err
+	title, ok1 := bmsFile.Header["title"]
+	subtitle, ok2 := bmsFile.Header["subtitle"]
+	if ok1 && ok2 && subtitle != "" {
+		if strings.HasSuffix(title, subtitle) {
+			bmsFile.Logs = append(bmsFile.Logs, "WARNING: #TITLE and #SUBTITLE have same text: "+subtitle)
+		}
 	}
-	if detResult.Charset == "UTF-8" {
-		return true, nil
+
+	// Check invalid value of Numbering commands
+	numberingCommandDefs := append(append(bmsFile.HeaderWav, bmsFile.HeaderBmp...), bmsFile.HeaderNumbering...)
+	defined := make([]bool, len(NUMBERING_COMMANDS))
+	var hasNoWavExtDef definition
+	for _, def := range numberingCommandDefs {
+		for i, nc := range NUMBERING_COMMANDS {
+			if strings.HasPrefix(def.Command, nc.Name) {
+				defined[i] = true
+				if def.Value == "" {
+					bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: #%s value is empty", strings.ToUpper(def.Command)))
+				} else if isInRange, err := nc.IsInRange(def.Value); err != nil || !isInRange {
+					if err != nil {
+						bmsFile.Logs = append(bmsFile.Logs, "DEBUG ERROR: IsInRange return error: " + def.Value)
+					}
+					bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("ERROR: #%s has invalid value: %s", strings.ToUpper(def.Command), def.Value))
+				} else if strings.HasPrefix(def.Command, "wav") && filepath.Ext(def.Value) != ".wav" && hasNoWavExtDef.Command == "" {
+					hasNoWavExtDef = def
+				}
+			}
+		}
 	}
-	return false, nil
+	for i, d := range defined {
+		if !d && NUMBERING_COMMANDS[i].Necessity != Unnecessary {
+			alertLevel := "ERROR"
+			if NUMBERING_COMMANDS[i].Necessity == Semi_necessary {
+				alertLevel = "WARNING"
+			}
+			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("%s: #%sxx definition is missing", alertLevel, strings.ToUpper(NUMBERING_COMMANDS[i].Name)))
+		}
+	}
+	if hasNoWavExtDef.Command != "" {
+		bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("NOTICE: #%s has file not .wav extension: %s",
+			strings.ToUpper(hasNoWavExtDef.Command), hasNoWavExtDef.Value))
+	}
+
+	if bmsFile.TotalNotes == 0 {
+		bmsFile.Logs = append(bmsFile.Logs, "ERROR: TotalNotes is 0")
+	}
+
+	// Check defined bmp/wav is used
+	checkDefinedObjIsUsed := func(commandName string, definitions *[]definition, channnels *[]string) {
+		usedObjs := map[string]bool{}
+		for _, def := range *definitions {
+			usedObjs[def.Command[3:5]] = false
+		}
+		undefinedObjs := []string{}
+		for _, def := range bmsFile.Pattern {
+			for _, ch := range *channnels {
+				if def.Command[3:5] == ch {
+					for i := 2; i < len(def.Value) + 1; i += 2 {
+						obj := def.Value[i-2:i]
+						if obj != "00" {
+							if _, ok := usedObjs[obj]; ok {
+								usedObjs[obj] = true
+							} else {
+								undefinedObjs = append(undefinedObjs, obj)
+							}
+						}
+					}
+					break
+				}
+			}
+		}
+		if len(undefinedObjs) > 0 {
+			lnobj := bmsFile.Header["lnobj"]
+			for _, obj := range removeDuplicate(undefinedObjs) {
+				if commandName != "WAV" || (commandName == "WAV" && lnobj != "" && strings.ToLower(lnobj) != obj) { // TODO 微妙?
+					bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: Used %s object is undefined: %s",
+						commandName, strings.ToUpper(obj)))
+				}
+			}
+		}
+		for _, def := range *definitions {
+			if !usedObjs[def.Command[3:5]] {
+				bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: Defined %s object is not used: %s(%s)",
+					commandName, strings.ToUpper(def.Command[3:5]), def.Value))
+			}
+		}
+	}
+	bmpChannels := []string{"04", "06", "07"/*, "0A"*/}
+	checkDefinedObjIsUsed("BMP", &bmsFile.HeaderBmp, &bmpChannels)
+	wavChannels := []string{"01", "11", "12", "13", "14", "15", "16", "17", "18", "19",
+		"21", "22", "23", "24", "25", "26", "27", "28", "29",
+		"31", "32", "33", "34", "35", "36", "37", "38", "39",
+		"41", "42", "43", "44", "45", "46", "47", "48", "49",
+		"51", "52", "53", "54", "55", "56", "57", "58", "59",
+		"61", "62", "63", "64", "65", "66", "67", "68", "69",
+	}
+	checkDefinedObjIsUsed("WAV", &bmsFile.HeaderWav, &wavChannels)
+
+	if len(bmsFile.Logs) > 0 {
+		fmt.Printf("# BmsFile checklog: %s\n", bmsFile.Path)
+		for _, log := range bmsFile.Logs {
+			fmt.Println(" " + log)
+		}
+	}
 }
 
 func checkBmsDirectory(bmsDir *Directory) {
@@ -665,106 +781,50 @@ func checkBmsDirectory(bmsDir *Directory) {
 	}
 }
 
-func checkBmsFile(bmsFile *BmsFile) {
-	/*illegalLog := func(command string) string {
-		return fmt.Sprintf("WARNING: #%s has illegal value: %s", strings.ToUpper(command), bmsFile.Header[command])
-	}*/
-	for _, command := range COMMANDS {
-		val, ok := bmsFile.Header[command.Name]
-		if !ok {
-			if command.Necessity != Unnecessary {
-				alertLevel := "ERROR"
-				if command.Necessity == Semi_necessary {
-					alertLevel = "WARNING"
-				}
-				bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("%s: #%s definition is missing", alertLevel, strings.ToUpper(command.Name)))
-			}
-		} else if val == "" {
-			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: #%s value is empty", strings.ToUpper(command.Name)))
-		} else if isInRange, err := command.IsInRange(val); err != nil || !isInRange {
-			if err != nil {
-				fmt.Println("DEBUG ERROR: IsInRange return error")
-			}
-			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("ERROR: #%s has invalid value: %s", strings.ToUpper(command.Name), val))
-		} else if command.Name == "rank" { // ここらへんはCommand型のCheck関数的なものに置き換えたい
-			rank, _ := strconv.Atoi(val)
-			if rank == 0 {
-				bmsFile.Logs = append(bmsFile.Logs, "NOTICE: #RANK is 0(VERY HARD)")
-			} else if rank == 1 {
-				bmsFile.Logs = append(bmsFile.Logs, "NOTICE: #RANK is 1(HARD)")
-			} else if rank == 4 {
-				bmsFile.Logs = append(bmsFile.Logs, "NOTICE: #RANK is 4(VERY EASY)")
-			}
-		} else if command.Name == "total" { // TODO: ノーツ数から少なすぎる、多すぎるTOTALを通知
-			total, _ := strconv.ParseFloat(val, 64)
-			if total < 100 {
-				bmsFile.Logs = append(bmsFile.Logs, "WARNING: #TOTAL is under 100: " + val)
-			} else {
-				defaultTotal := bmsFile.CalculateDefaultTotal()
-				overRate := 1.6
-				totalPerNotes := total / float64(bmsFile.TotalNotes) // TODO 適切な基準値は？
-				if total > defaultTotal * overRate && totalPerNotes > 0.35 {
-					bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("NOTICE: #TOTAL is too high(TotalNotes=%d): %s", bmsFile.TotalNotes, val))
-				} else if total < defaultTotal / overRate && totalPerNotes < 0.2 {
-					bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("NOTICE: #TOTAL is too low(TotalNotes=%d): %s", bmsFile.TotalNotes, val))
-				}
-			}
-		} else if command.Name == "defexrank" {
-			bmsFile.Logs = append(bmsFile.Logs, "NOTICE: #DEFEXRANK is defined: " + val)
+func hasExts(path string, exts *[]string) bool {
+	for _, ext := range *exts {
+		if strings.ToLower(ext) == strings.ToLower(filepath.Ext(path)) {
+			return true
 		}
+	}
+	return false
+}
+
+func isBmsPath(path string) bool {
+	bmsExts := []string{".bms", ".bme", ".bml", ".pms", ".bmson"}
+	return hasExts(path, &bmsExts)
+}
+
+func containsEnvironmentDependentRune(text string) bool {
+	return !regexp.MustCompile(`^[0-9a-zA-Z !#$%&'\(\)\-\+\^@\[\];,\.=~\{\}_]+$`).MatchString(text)
+}
+
+func isUTF8(path string) (bool, error) {
+	fBytes, err := ioutil.ReadFile(path)
+	if err != nil {
+		return false, err
 	}
 
-	title, ok1 := bmsFile.Header["title"]
-	subtitle, ok2 := bmsFile.Header["subtitle"]
-	if ok1 && ok2 && subtitle != "" {
-		if strings.HasSuffix(title, subtitle) {
-			bmsFile.Logs = append(bmsFile.Logs, "WARNING: #TITLE and #SUBTITLE have same text: "+subtitle)
-		}
+	det := chardet.NewTextDetector()
+	detResult, err := det.DetectBest(fBytes)
+	if err != nil {
+		fmt.Println("Detect error:", err.Error())
+		return false, err
 	}
+	if detResult.Charset == "UTF-8" {
+		return true, nil
+	}
+	return false, nil
+}
 
-	// Check invalid value of Numbering commands
-	numberingCommandDefs := append(append(bmsFile.HeaderWav, bmsFile.HeaderBmp...), bmsFile.HeaderNumbering...)
-	defined := make([]bool, len(NUMBERING_COMMANDS))
-	var hasNoWavExtDef definition
-	for _, def := range numberingCommandDefs {
-		for i, nc := range NUMBERING_COMMANDS {
-			if strings.HasPrefix(def.Command, nc.Name) {
-				defined[i] = true
-				if def.Value == "" {
-					bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: #%s value is empty", strings.ToUpper(def.Command)))
-				} else if isInRange, err := nc.IsInRange(def.Value); err != nil || !isInRange {
-					if err != nil {
-						bmsFile.Logs = append(bmsFile.Logs, "DEBUG ERROR: IsInRange return error: " + def.Value)
-					}
-					bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("ERROR: #%s has invalid value: %s", strings.ToUpper(def.Command), def.Value))
-				} else if strings.HasPrefix(def.Command, "wav") && filepath.Ext(def.Value) != ".wav" && hasNoWavExtDef.Command == "" {
-					hasNoWavExtDef = def
-				}
-			}
+func removeDuplicate(args []string) []string {
+	result := make([]string, 0, len(args))
+	encounterd := map[string]bool{}
+	for i := 0; i < len(args); i++ {
+		if !encounterd[args[i]] {
+			encounterd[args[i]] = true
+			result = append(result, args[i])
 		}
 	}
-	for i, d := range defined {
-		if !d && NUMBERING_COMMANDS[i].Necessity != Unnecessary {
-			alertLevel := "ERROR"
-			if NUMBERING_COMMANDS[i].Necessity == Semi_necessary {
-				alertLevel = "WARNING"
-			}
-			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("%s: #%sxx definition is missing", alertLevel, strings.ToUpper(NUMBERING_COMMANDS[i].Name)))
-		}
-	}
-	if hasNoWavExtDef.Command != "" {
-		bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("NOTICE: #%s has file not .wav extension: %s",
-			strings.ToUpper(hasNoWavExtDef.Command), hasNoWavExtDef.Value))
-	}
-
-	if bmsFile.TotalNotes == 0 {
-		bmsFile.Logs = append(bmsFile.Logs, "ERROR: TotalNotes is 0")
-	}
-
-	if len(bmsFile.Logs) > 0 {
-		fmt.Printf("# BmsFile checklog: %s\n", bmsFile.Path)
-		for _, log := range bmsFile.Logs {
-			fmt.Println(" " + log)
-		}
-	}
+	return result
 }
