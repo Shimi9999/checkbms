@@ -241,17 +241,6 @@ func main() {
 		fmt.Println("Error: Entered path is not bms file or directory")
 		os.Exit(1)
 	}
-
-	/*bmsdirs := make([]bmsobject.BmsDirectory, 0)
-	  err = bmsloader.FindBmsInDirectory(path, &bmsdirs)
-	  if err != nil {
-	    fmt.Println(err.Error())
-	    os.Exit(1)
-	  }
-	  if len(bmsdirs) == 0 {
-	    fmt.Println("Error: No BMS files")
-	    os.Exit(1)
-	  }*/
 }
 
 func scanDirectory(path string) error {
@@ -587,7 +576,7 @@ func checkBmsFile(bmsFile *BmsFile) {
 	}
 	if hasNoWavExtDef.Command != "" {
 		bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("NOTICE: #%s has file not .wav extension: %s",
-			strings.ToUpper(hasNoWavExtDef.Command), hasNoWavExtDef.Value))
+			strings.ToUpper(hasNoWavExtDef.Command), hasNoWavExtDef.Value)) // TODO 複数の場合はその旨も出力する？
 	}
 
 	if bmsFile.TotalNotes == 0 {
@@ -595,33 +584,37 @@ func checkBmsFile(bmsFile *BmsFile) {
 	}
 
 	// Check defined bmp/wav is used
-	checkDefinedObjIsUsed := func(commandName string, definitions *[]definition, channnels *[]string) {
+	matchChannel := func(ch string, channels *[]string) bool {
+		for _, c := range *channels {
+			if ch == c {
+				return true
+			}
+		}
+		return false
+	}
+	checkDefinedObjIsUsed := func(commandName string, definitions *[]definition, channels *[]string, ignoreObj string) {
 		usedObjs := map[string]bool{}
 		for _, def := range *definitions {
 			usedObjs[def.Command[3:5]] = false
 		}
 		undefinedObjs := []string{}
 		for _, def := range bmsFile.Pattern {
-			for _, ch := range *channnels {
-				if def.Command[3:5] == ch {
-					for i := 2; i < len(def.Value) + 1; i += 2 {
-						obj := def.Value[i-2:i]
-						if obj != "00" {
-							if _, ok := usedObjs[obj]; ok {
-								usedObjs[obj] = true
-							} else {
-								undefinedObjs = append(undefinedObjs, obj)
-							}
+			if matchChannel(def.Command[3:5], channels) {
+				for i := 2; i < len(def.Value) + 1; i += 2 {
+					obj := def.Value[i-2:i]
+					if obj != "00" {
+						if _, ok := usedObjs[obj]; ok {
+							usedObjs[obj] = true
+						} else {
+							undefinedObjs = append(undefinedObjs, obj)
 						}
 					}
-					break
 				}
 			}
 		}
 		if len(undefinedObjs) > 0 {
-			lnobj := bmsFile.Header["lnobj"]
 			for _, obj := range removeDuplicate(undefinedObjs) {
-				if commandName != "WAV" || (commandName == "WAV" && lnobj != "" && strings.ToLower(lnobj) != obj) { // TODO 微妙?
+				if obj != ignoreObj {
 					bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: Used %s object is undefined: %s",
 						commandName, strings.ToUpper(obj)))
 				}
@@ -635,7 +628,7 @@ func checkBmsFile(bmsFile *BmsFile) {
 		}
 	}
 	bmpChannels := []string{"04", "06", "07"/*, "0A"*/}
-	checkDefinedObjIsUsed("BMP", &bmsFile.HeaderBmp, &bmpChannels)
+	checkDefinedObjIsUsed("BMP", &bmsFile.HeaderBmp, &bmpChannels, "")
 	wavChannels := []string{"01", "11", "12", "13", "14", "15", "16", "17", "18", "19",
 		"21", "22", "23", "24", "25", "26", "27", "28", "29",
 		"31", "32", "33", "34", "35", "36", "37", "38", "39",
@@ -643,7 +636,7 @@ func checkBmsFile(bmsFile *BmsFile) {
 		"51", "52", "53", "54", "55", "56", "57", "58", "59",
 		"61", "62", "63", "64", "65", "66", "67", "68", "69",
 	}
-	checkDefinedObjIsUsed("WAV", &bmsFile.HeaderWav, &wavChannels)
+	checkDefinedObjIsUsed("WAV", &bmsFile.HeaderWav, &wavChannels, strings.ToLower(bmsFile.Header["lnobj"]))
 
 	if len(bmsFile.Logs) > 0 {
 		fmt.Printf("# BmsFile checklog: %s\n", bmsFile.Path)
