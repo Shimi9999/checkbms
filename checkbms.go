@@ -336,7 +336,6 @@ func loadBmsFile(path string) (*BmsFile, error) {
 	bmsFile := NewBmsFile(path)
 	fieldBorders := []string{"HEADER FIELD", "EXPANSION FIELD", "MAIN DATA FIELD"}
 	randomCommands := []string{"random", "if", "endif"}
-	chmap := map[string]bool{"7k": false, "10k": false, "14k": false}
 	for scanner.Scan() {
 		/*if lineNumber == 0 && bytes.HasPrefix(([]byte)(scanner.Text()), []byte{0xef, 0xbb, 0xbf}) {
 		  fmt.Println("Error, character code is UTF-8(BOM):", path)
@@ -428,23 +427,6 @@ func loadBmsFile(path string) (*BmsFile, error) {
 				data := strings.TrimSpace(line[7:])
 				bmsFile.Pattern = append(bmsFile.Pattern, definition{strings.ToLower(line[1:6]), strings.ToLower(data)})
 				correctLine = true
-				chint, _ := strconv.Atoi(line[4:6])
-				if (chint >= 18 && chint <= 19) || (chint >= 38 && chint <= 39) {
-					chmap["7k"] = true
-				} else if (chint >= 21 && chint <= 26) || (chint >= 41 && chint <= 46) {
-					chmap["10k"] = true
-				} else if (chint >= 28 && chint <= 29) || (chint >= 48 && chint <= 49) {
-					chmap["14k"] = true
-				}
-
-				if (chint >= 11 && chint <= 19) || (chint >= 21 && chint <= 29) ||
-				(chint >= 51 && chint <= 59) || (chint >= 61 && chint <= 69) { // LN TODO LN始点のみをノーツ数に加算する?
-					for i := 2; i < len(data) + 1; i += 2 {
-						if data[i-2:i] != "00" {
-							bmsFile.TotalNotes++
-						}
-					}
-				}
 			}
 		}
 		if !correctLine {
@@ -473,6 +455,33 @@ func loadBmsFile(path string) (*BmsFile, error) {
 	if scanner.Err() != nil {
 		return nil, fmt.Errorf("BMSfile scan error: " + scanner.Err().Error())
 	}
+
+	chmap := map[string]bool{"7k": false, "10k": false, "14k": false}
+	lnCount := 0
+	for _, pattern := range bmsFile.Pattern {
+		chint, _ := strconv.Atoi(pattern.Command[3:5])
+		if (chint >= 18 && chint <= 19) || (chint >= 38 && chint <= 39) {
+			chmap["7k"] = true
+		} else if (chint >= 21 && chint <= 26) || (chint >= 41 && chint <= 46) {
+			chmap["10k"] = true
+		} else if (chint >= 28 && chint <= 29) || (chint >= 48 && chint <= 49) {
+			chmap["14k"] = true
+		}
+
+		if (chint >= 11 && chint <= 19) || (chint >= 21 && chint <= 29) ||
+		(chint >= 51 && chint <= 59) || (chint >= 61 && chint <= 69) {
+			for i := 2; i < len(pattern.Value) + 1; i += 2 {
+				if obj := pattern.Value[i-2:i]; obj != "00" && obj != bmsFile.Header["lnobj"] {
+					if (chint >= 51 && chint <= 59) || (chint >= 61 && chint <= 69) {
+						lnCount++
+					} else {
+						bmsFile.TotalNotes++
+					}
+				}
+			}
+		}
+	}
+	bmsFile.TotalNotes += lnCount / 2
 
 	if filepath.Ext(path) == ".pms" {
 		bmsFile.Keymode = 9
@@ -534,6 +543,10 @@ func checkBmsFile(bmsFile *BmsFile) {
 			}
 		} else if command.Name == "defexrank" {
 			bmsFile.Logs = append(bmsFile.Logs, "NOTICE: #DEFEXRANK is defined: " + val)
+		} else if command.Name == "lntype" {
+			if val == "2" {
+				bmsFile.Logs = append(bmsFile.Logs, "WARNING: #LNTYPE 2(MGQ) is deprecated")
+			}
 		}
 	}
 
