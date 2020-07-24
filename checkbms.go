@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"regexp"
 	"math"
+	"math/big"
 	"io/ioutil"
 	"path/filepath"
 	"unicode/utf8"
@@ -638,6 +639,79 @@ func checkBmsFile(bmsFile *BmsFile) {
 	}
 	checkDefinedObjIsUsed("WAV", &bmsFile.HeaderWav, &wavChannels, strings.ToLower(bmsFile.Header["lnobj"]))
 
+	// Check WAV duplicate
+	beforeMeasure := 0
+	sameMeasureWavs := []definition{}
+	maxValueLength := 0
+	for patternIndex, def := range bmsFile.Pattern {
+		measure, err := strconv.Atoi(def.Command[:3])
+		if err != nil {
+			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("DEBUG ERROR: Measure atoi error: %s", err.Error()))
+		} else if measure < beforeMeasure { // TODO IFを考慮
+			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: Measure order is not ascending: prev=%d next=%d", beforeMeasure, measure))
+		} else {
+			if measure == beforeMeasure {
+				if def.Value != "00" && matchChannel(def.Command[3:5], &wavChannels) {
+					sameMeasureWavs = append(sameMeasureWavs, def)
+					if len(def.Value) / 2 > maxValueLength {
+						maxValueLength = len(def.Value) / 2
+					}
+				}
+			}
+			if measure != beforeMeasure || patternIndex == len(bmsFile.Pattern)-1 {
+				if len(sameMeasureWavs) > 0 {
+					wavIndexs := make([]int, len(sameMeasureWavs))
+					valFrac := func(frac [2]int) float64 {
+						return float64(frac[0]) / float64(frac[1])
+					}
+					for fIndexPos := [2]int{0, 1}; valFrac(fIndexPos) < 1.0; {
+						sameTimingObjs := []string{}
+						fMin := [2]int{1, 1}
+						for i, wav := range sameMeasureWavs {
+							fObjPos := [2]int{wavIndexs[i], len(wav.Value) / 2}
+							if valFrac(fObjPos) >= 1.0 {
+								continue
+							}
+							objWavValue := wav.Value[wavIndexs[i]*2:wavIndexs[i]*2+2]
+							if valFrac(fObjPos) == valFrac(fIndexPos) && objWavValue != "00" {
+								sameTimingObjs = append(sameTimingObjs, objWavValue)
+							}
+							if valFrac(fObjPos) <= valFrac(fIndexPos) {
+								wavIndexs[i]++
+								fNextObjPos := [2]int{wavIndexs[i], len(wav.Value) / 2}
+								if valFrac(fNextObjPos) < valFrac(fMin) {
+									fMin = fNextObjPos
+								}
+							}
+						}
+						if len(sameTimingObjs) > 0 {
+							duplicates := []string{}
+							objCounts := map[string]int{}
+							for _, obj := range sameTimingObjs {
+								if objCounts[obj] == 1 {
+									duplicates = append(duplicates, obj)
+								}
+								objCounts[obj]++
+							}
+							if len(duplicates) > 0 {
+								fp := [2]int{fIndexPos[0], fIndexPos[1]}
+								fp = reduceFraction(fp)
+								for _, dup := range duplicates {
+									bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: Used WAV is duplicate(#%3d, %d/%d): %s * %d",
+										beforeMeasure, fp[0], fp[1], strings.ToUpper(dup), objCounts[dup]))
+								}
+							}
+						}
+						fIndexPos = fMin
+					}
+					sameMeasureWavs = []definition{}
+					maxValueLength = 0
+				}
+				beforeMeasure = measure
+			}
+		}
+	}
+
 	if len(bmsFile.Logs) > 0 {
 		fmt.Printf("# BmsFile checklog: %s\n", bmsFile.Path)
 		for _, log := range bmsFile.Logs {
@@ -820,4 +894,17 @@ func removeDuplicate(args []string) []string {
 		}
 	}
 	return result
+}
+
+func reduceFraction(fraction [2]int) [2]int {
+	numerator := big.NewInt(int64(fraction[0]))
+	denominator := big.NewInt(int64(fraction[1]))
+	gcd := big.NewInt(1)
+	gcd = gcd.GCD(nil, nil, numerator, denominator)
+	if gcd.Int64() > 1 {
+		fraction[0] /= int(gcd.Int64())
+		fraction[1] /= int(gcd.Int64())
+		fraction = reduceFraction(fraction)
+	}
+	return fraction
 }
