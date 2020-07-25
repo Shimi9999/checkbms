@@ -223,6 +223,112 @@ func (f *fraction) reduce() {
 	}
 }
 
+type note struct {
+	Channel string
+	Value string
+}
+type patternMoment struct {
+	Measure int
+	Position fraction
+	Objs []note
+}
+type patternIterator struct {
+	patterns *[]definition
+	targetChannels *[]string
+	index int
+	measure int
+	position *fraction
+	sameMeasureLanes *[]definition
+	laneIndexs []int
+}
+func newPattenIterator(patterns *[]definition, targetChannels *[]string) patternIterator {
+	pi := patternIterator{}
+	pi.patterns = patterns
+	pi.targetChannels = targetChannels
+	return pi
+}
+func (pi *patternIterator) next() (moment *patternMoment, logs *[]string) {
+	logs = &[]string{}
+	for {
+		if pi.sameMeasureLanes == nil {
+			pi.sameMeasureLanes = &[]definition{}
+			for ; len(*pi.sameMeasureLanes) == 0; {
+				var beforeMeasure int
+				for isFirst := true; ; {
+					if pi.index == len(*pi.patterns)-1 {
+						return nil, logs
+					}
+					def := (*pi.patterns)[pi.index]
+					pi.measure, _ = strconv.Atoi(def.Command[:3])
+					if isFirst {
+						beforeMeasure = pi.measure
+						isFirst = false
+					}
+					pi.index++
+					if pi.measure < beforeMeasure { // TODO #IFを考慮
+						*logs = append(*logs, fmt.Sprintf("WARNING: Measure order is not ascending: prev=%d next=%d", beforeMeasure, pi.measure))
+					}
+					if pi.measure == beforeMeasure {
+						if def.Value != "00" && (pi.targetChannels == nil || matchChannel(def.Command[3:5], pi.targetChannels)) {
+							*pi.sameMeasureLanes = append(*pi.sameMeasureLanes, def)
+						}
+					}
+					if pi.measure != beforeMeasure || pi.index == len(*pi.patterns)-1 {
+						if pi.measure != beforeMeasure {
+							pi.measure = beforeMeasure
+						}
+						break
+					}
+					beforeMeasure = pi.measure
+				}
+			}
+		}
+
+		if pi.laneIndexs == nil {
+			pi.laneIndexs = make([]int, len(*pi.sameMeasureLanes))
+		}
+		if pi.position == nil {
+			pi.position = &fraction{0, 1}
+		}
+		sameTimingNotes := []note{}
+		for ; len(sameTimingNotes) == 0 && pi.position.value() < 1.0; {
+			minNextObjPos := fraction{1, 1}
+			for i, lane := range *pi.sameMeasureLanes {
+				objPos := fraction{pi.laneIndexs[i], len(lane.Value) / 2}
+				if objPos.value() >= 1.0 {
+					continue
+				}
+				objValue := lane.Value[pi.laneIndexs[i]*2:pi.laneIndexs[i]*2+2]
+				if objPos.value() == pi.position.value() && objValue != "00" {
+					sameTimingNotes = append(sameTimingNotes, note{Channel: lane.Command[3:5], Value: objValue})
+				}
+				if objPos.value() <= pi.position.value() {
+					pi.laneIndexs[i]++
+					nextObjPos := fraction{pi.laneIndexs[i], len(lane.Value) / 2}
+					if nextObjPos.value() < minNextObjPos.value() {
+						minNextObjPos = nextObjPos
+					}
+				}
+			}
+			if len(sameTimingNotes) > 0 {
+				moment = &patternMoment{Measure: pi.measure, Position: *pi.position, Objs: sameTimingNotes}
+			}
+			*pi.position = minNextObjPos
+		}
+		if len(sameTimingNotes) > 0 {
+			break
+		}/* else if pi.index == len(*pi.patterns) {
+			return nil, logs
+		}*/
+		if pi.position.value() >= 1.0 {
+			pi.position = nil
+			pi.sameMeasureLanes = nil
+			pi.laneIndexs = nil
+		}
+	}
+	return moment, logs
+}
+
 func main() {
 	flag.Parse()
 
@@ -617,14 +723,6 @@ func checkBmsFile(bmsFile *BmsFile) {
 	}
 
 	// Check defined bmp/wav is used
-	matchChannel := func(ch string, channels *[]string) bool {
-		for _, c := range *channels {
-			if ch == c {
-				return true
-			}
-		}
-		return false
-	}
 	checkDefinedObjIsUsed := func(commandName string, definitions *[]definition, channels *[]string, ignoreObj string) {
 		usedObjs := map[string]bool{}
 		for _, def := range *definitions {
@@ -672,72 +770,32 @@ func checkBmsFile(bmsFile *BmsFile) {
 	checkDefinedObjIsUsed("WAV", &bmsFile.HeaderWav, &wavChannels, strings.ToLower(bmsFile.Header["lnobj"]))
 
 	// Check WAV duplicate
-	beforeMeasure := 0
-	sameMeasureWavs := []definition{}
-	maxValueLength := 0
-	for patternIndex, def := range bmsFile.Pattern {
-		measure, err := strconv.Atoi(def.Command[:3])
-		if err != nil {
-			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("DEBUG ERROR: Measure atoi error: %s", err.Error()))
-		} else if measure < beforeMeasure { // TODO IFを考慮
-			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: Measure order is not ascending: prev=%d next=%d", beforeMeasure, measure))
-		} else {
-			if measure == beforeMeasure {
-				if def.Value != "00" && matchChannel(def.Command[3:5], &wavChannels) {
-					sameMeasureWavs = append(sameMeasureWavs, def)
-					if len(def.Value) / 2 > maxValueLength {
-						maxValueLength = len(def.Value) / 2
-					}
-				}
+	pi := newPattenIterator(&bmsFile.Pattern, &wavChannels)
+	for moment, logs := pi.next(); moment != nil; moment, logs = pi.next() {
+		if logs != nil && len(*logs) > 0 {
+			bmsFile.Logs = append(bmsFile.Logs, *logs...)
+		}
+		duplicates := []string{}
+		objCounts := map[string]int{}
+		for _, obj := range moment.Objs {
+			if objCounts[obj.Value] == 1 {
+				duplicates = append(duplicates, obj.Value)
 			}
-			if measure != beforeMeasure || patternIndex == len(bmsFile.Pattern)-1 {
-				if len(sameMeasureWavs) > 0 {
-					wavIndexs := make([]int, len(sameMeasureWavs))
-					fIndexPos := fraction{0, 1}
-					for /*fIndexPos := fraction{0, 1}*/; fIndexPos.value() < 1.0; {
-						sameTimingObjs := []string{}
-						fMinNextObjPos := fraction{1, 1}
-						for i, wav := range sameMeasureWavs {
-							fObjPos := fraction{wavIndexs[i], len(wav.Value) / 2}
-							if fObjPos.value() >= 1.0 {
-								continue
-							}
-							objWavValue := wav.Value[wavIndexs[i]*2:wavIndexs[i]*2+2]
-							if fObjPos.value() == fIndexPos.value() && objWavValue != "00" {
-								sameTimingObjs = append(sameTimingObjs, objWavValue)
-							}
-							if fObjPos.value() <= fIndexPos.value() {
-								wavIndexs[i]++
-								fNextObjPos := fraction{wavIndexs[i], len(wav.Value) / 2}
-								if fNextObjPos.value() < fMinNextObjPos.value() {
-									fMinNextObjPos = fNextObjPos
-								}
-							}
-						}
-						if len(sameTimingObjs) > 0 {
-							duplicates := []string{}
-							objCounts := map[string]int{}
-							for _, obj := range sameTimingObjs {
-								if objCounts[obj] == 1 {
-									duplicates = append(duplicates, obj)
-								}
-								objCounts[obj]++
-							}
-							if len(duplicates) > 0 {
-								fp := fraction{fIndexPos.Numerator, fIndexPos.Denominator}
-								fp.reduce()
-								for _, dup := range duplicates {
-									bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: Used WAV is duplicate(#%3d, %d/%d): %s * %d",
-										beforeMeasure, fp.Numerator, fp.Denominator, strings.ToUpper(dup), objCounts[dup]))
-								}
-							}
-						}
-						fIndexPos = fMinNextObjPos
+			objCounts[obj.Value]++
+		}
+		if len(duplicates) > 0 {
+			fp := fraction{moment.Position.Numerator, moment.Position.Denominator}
+			fp.reduce()
+			for _, dup := range duplicates {
+				bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: Used WAV is duplicate(#%3d, %d/%d): %s * %d",
+					moment.Measure, fp.Numerator, fp.Denominator, strings.ToUpper(dup), objCounts[dup]))
+			}
+		}
+	}
 					}
-					sameMeasureWavs = []definition{}
-					maxValueLength = 0
 				}
-				beforeMeasure = measure
+					}
+				}
 			}
 		}
 	}
@@ -912,6 +970,15 @@ func isUTF8(path string) (bool, error) {
 		return true, nil
 	}
 	return false, nil
+}
+
+func matchChannel(ch string, channels *[]string) bool {
+	for _, c := range *channels {
+		if ch == c {
+			return true
+		}
+	}
+	return false
 }
 
 func removeDuplicate(args []string) []string {
