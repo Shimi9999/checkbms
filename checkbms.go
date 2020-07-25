@@ -249,22 +249,21 @@ func newPattenIterator(patterns *[]definition, targetChannels *[]string) pattern
 }
 func (pi *patternIterator) next() (moment *patternMoment, logs *[]string) {
 	logs = &[]string{}
-	for {
+	for ; moment == nil; {
 		if pi.sameMeasureLanes == nil {
 			pi.sameMeasureLanes = &[]definition{}
 			for ; len(*pi.sameMeasureLanes) == 0; {
+				if pi.index >= len(*pi.patterns) {
+					return nil, logs
+				}
 				var beforeMeasure int
-				for isFirst := true; ; {
-					if pi.index == len(*pi.patterns)-1 {
-						return nil, logs
-					}
+				for isFirst := true; pi.index < len(*pi.patterns); pi.index++ {
 					def := (*pi.patterns)[pi.index]
 					pi.measure, _ = strconv.Atoi(def.Command[:3])
 					if isFirst {
 						beforeMeasure = pi.measure
 						isFirst = false
 					}
-					pi.index++
 					if pi.measure < beforeMeasure { // TODO #IFを考慮
 						*logs = append(*logs, fmt.Sprintf("WARNING: Measure order is not ascending: prev=%d next=%d", beforeMeasure, pi.measure))
 					}
@@ -273,10 +272,8 @@ func (pi *patternIterator) next() (moment *patternMoment, logs *[]string) {
 							*pi.sameMeasureLanes = append(*pi.sameMeasureLanes, def)
 						}
 					}
-					if pi.measure != beforeMeasure || pi.index == len(*pi.patterns)-1 {
-						if pi.measure != beforeMeasure {
-							pi.measure = beforeMeasure
-						}
+					if pi.measure != beforeMeasure {
+						pi.measure = beforeMeasure
 						break
 					}
 					beforeMeasure = pi.measure
@@ -302,12 +299,20 @@ func (pi *patternIterator) next() (moment *patternMoment, logs *[]string) {
 				if objPos.value() == pi.position.value() && objValue != "00" {
 					sameTimingNotes = append(sameTimingNotes, note{Channel: lane.Command[3:5], Value: objValue})
 				}
-				if objPos.value() <= pi.position.value() {
+
+				if objPos.value() == pi.position.value() { // objPos.value() < pi.position.value() is impossible
 					pi.laneIndexs[i]++
-					nextObjPos := fraction{pi.laneIndexs[i], len(lane.Value) / 2}
-					if nextObjPos.value() < minNextObjPos.value() {
-						minNextObjPos = nextObjPos
+				}
+				nextObjPos := fraction{pi.laneIndexs[i], len(lane.Value) / 2}
+				for ; pi.laneIndexs[i] < len(lane.Value) / 2; pi.laneIndexs[i]++ {
+					nextObjPos = fraction{pi.laneIndexs[i], len(lane.Value) / 2}
+					nextObjValue := lane.Value[pi.laneIndexs[i]*2:pi.laneIndexs[i]*2+2]
+					if nextObjValue != "00" {
+						break
 					}
+				}
+				if nextObjPos.value() < minNextObjPos.value() {
+					minNextObjPos = nextObjPos
 				}
 			}
 			if len(sameTimingNotes) > 0 {
@@ -315,11 +320,6 @@ func (pi *patternIterator) next() (moment *patternMoment, logs *[]string) {
 			}
 			*pi.position = minNextObjPos
 		}
-		if len(sameTimingNotes) > 0 {
-			break
-		}/* else if pi.index == len(*pi.patterns) {
-			return nil, logs
-		}*/
 		if pi.position.value() >= 1.0 {
 			pi.position = nil
 			pi.sameMeasureLanes = nil
@@ -772,12 +772,12 @@ func checkBmsFile(bmsFile *BmsFile) {
 	// Check WAV duplicate
 	pi := newPattenIterator(&bmsFile.Pattern, &wavChannels)
 	for moment, logs := pi.next(); moment != nil; moment, logs = pi.next() {
-		if logs != nil && len(*logs) > 0 {
+		if logs != nil && len(*logs) > 0 { // TODO 小節番号に関するログは事前にまとめて出しておく？
 			bmsFile.Logs = append(bmsFile.Logs, *logs...)
 		}
 		duplicates := []string{}
 		objCounts := map[string]int{}
-		for _, obj := range moment.Objs {
+		for _, obj := range moment.Objs { // TODO 無音ノーツを無視する
 			if objCounts[obj.Value] == 1 {
 				duplicates = append(duplicates, obj.Value)
 			}
@@ -792,11 +792,52 @@ func checkBmsFile(bmsFile *BmsFile) {
 			}
 		}
 	}
+
+	// Check end of LN exists
+	notesChannels := []string{"11", "12", "13", "14", "15", "16", "17", "18", "19",
+		"21", "22", "23", "24", "25", "26", "27", "28", "29",
+		"51", "52", "53", "54", "55", "56", "57", "58", "59",
+		"61", "62", "63", "64", "65", "66", "67", "68", "69",
+	}
+	type LNstart struct {
+		Measure int
+		Position fraction
+		Value string
+	}
+	ongoingLNs := map[string]*LNstart{}
+	pi = newPattenIterator(&bmsFile.Pattern, &notesChannels)
+	for moment, _ := pi.next(); moment != nil; moment, _ = pi.next() {
+		for _, obj := range moment.Objs {
+			chint, _ := strconv.Atoi(obj.Channel)
+			if (chint >= 51 && chint <= 59) || (chint >= 61 && chint <= 69) {
+				if ongoingLNs[obj.Channel] == nil {
+					ongoingLNs[obj.Channel] = &LNstart{moment.Measure, moment.Position, obj.Value}
+				} else if bmsFile.Header["lnobj"] == "" {
+					if ongoingLNs[obj.Channel].Value != obj.Value {
+						bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: LN start and end are not equal: %s(#%d,%d/%d) -> %s(#%d,%d/%d)",
+							strings.ToUpper(ongoingLNs[obj.Channel].Value), ongoingLNs[obj.Channel].Measure, ongoingLNs[obj.Channel].Position.Numerator, ongoingLNs[obj.Channel].Position.Denominator,
+							strings.ToUpper(obj.Value), moment.Measure, moment.Position.Numerator, moment.Position.Denominator))
 					}
+					ongoingLNs[obj.Channel] = nil
 				}
+			} else if (chint >= 11 && chint <= 19) || (chint >= 21 && chint <= 29) {
+				lnCh := strconv.Itoa(chint+40)
+				if ongoingLNs[lnCh] != nil {
+					if obj.Value == bmsFile.Header["lnobj"] {
+						ongoingLNs[lnCh] = nil
+					} else {
+						bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("ERROR: Normal note is in LN: %s(#%d,%d/%d) in %s(#%d,%d/%d)",
+							strings.ToUpper(obj.Value), moment.Measure, moment.Position.Numerator, moment.Position.Denominator,
+							strings.ToUpper(ongoingLNs[lnCh].Value), ongoingLNs[lnCh].Measure, ongoingLNs[lnCh].Position.Numerator, ongoingLNs[lnCh].Position.Denominator))
 					}
 				}
 			}
+		}
+	}
+	for _, lnStart := range ongoingLNs { // TODO ソートして表示する？
+		if lnStart != nil {
+			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("ERROR: LN is not finished: %s(#%d,%d/%d)",
+				strings.ToUpper(lnStart.Value), lnStart.Measure, lnStart.Position.Numerator, lnStart.Position.Denominator))
 		}
 	}
 
