@@ -204,6 +204,25 @@ var NUMBERING_COMMANDS = []Command{
 	Command{"scroll", Float, Unnecessary, &[]float64{math.SmallestNonzeroFloat64, math.MaxFloat64}},
 }
 
+type fraction struct {
+	Numerator int
+	Denominator int
+}
+func (f fraction) value() float64 {
+	return float64(f.Numerator) / float64(f.Denominator)
+}
+func (f *fraction) reduce() {
+	bigNme := big.NewInt(int64(f.Numerator))
+	bigDnm := big.NewInt(int64(f.Denominator))
+	gcd := big.NewInt(1)
+	gcd = gcd.GCD(nil, nil, bigNme, bigDnm)
+	if gcd.Int64() > 1 {
+		f.Numerator /= int(gcd.Int64())
+		f.Denominator /= int(gcd.Int64())
+		f.reduce()
+	}
+}
+
 func main() {
 	flag.Parse()
 
@@ -674,26 +693,24 @@ func checkBmsFile(bmsFile *BmsFile) {
 			if measure != beforeMeasure || patternIndex == len(bmsFile.Pattern)-1 {
 				if len(sameMeasureWavs) > 0 {
 					wavIndexs := make([]int, len(sameMeasureWavs))
-					valFrac := func(frac [2]int) float64 {
-						return float64(frac[0]) / float64(frac[1])
-					}
-					for fIndexPos := [2]int{0, 1}; valFrac(fIndexPos) < 1.0; {
+					fIndexPos := fraction{0, 1}
+					for /*fIndexPos := fraction{0, 1}*/; fIndexPos.value() < 1.0; {
 						sameTimingObjs := []string{}
-						fMin := [2]int{1, 1}
+						fMinNextObjPos := fraction{1, 1}
 						for i, wav := range sameMeasureWavs {
-							fObjPos := [2]int{wavIndexs[i], len(wav.Value) / 2}
-							if valFrac(fObjPos) >= 1.0 {
+							fObjPos := fraction{wavIndexs[i], len(wav.Value) / 2}
+							if fObjPos.value() >= 1.0 {
 								continue
 							}
 							objWavValue := wav.Value[wavIndexs[i]*2:wavIndexs[i]*2+2]
-							if valFrac(fObjPos) == valFrac(fIndexPos) && objWavValue != "00" {
+							if fObjPos.value() == fIndexPos.value() && objWavValue != "00" {
 								sameTimingObjs = append(sameTimingObjs, objWavValue)
 							}
-							if valFrac(fObjPos) <= valFrac(fIndexPos) {
+							if fObjPos.value() <= fIndexPos.value() {
 								wavIndexs[i]++
-								fNextObjPos := [2]int{wavIndexs[i], len(wav.Value) / 2}
-								if valFrac(fNextObjPos) < valFrac(fMin) {
-									fMin = fNextObjPos
+								fNextObjPos := fraction{wavIndexs[i], len(wav.Value) / 2}
+								if fNextObjPos.value() < fMinNextObjPos.value() {
+									fMinNextObjPos = fNextObjPos
 								}
 							}
 						}
@@ -707,15 +724,15 @@ func checkBmsFile(bmsFile *BmsFile) {
 								objCounts[obj]++
 							}
 							if len(duplicates) > 0 {
-								fp := [2]int{fIndexPos[0], fIndexPos[1]}
-								fp = reduceFraction(fp)
+								fp := fraction{fIndexPos.Numerator, fIndexPos.Denominator}
+								fp.reduce()
 								for _, dup := range duplicates {
 									bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: Used WAV is duplicate(#%3d, %d/%d): %s * %d",
-										beforeMeasure, fp[0], fp[1], strings.ToUpper(dup), objCounts[dup]))
+										beforeMeasure, fp.Numerator, fp.Denominator, strings.ToUpper(dup), objCounts[dup]))
 								}
 							}
 						}
-						fIndexPos = fMin
+						fIndexPos = fMinNextObjPos
 					}
 					sameMeasureWavs = []definition{}
 					maxValueLength = 0
@@ -907,17 +924,4 @@ func removeDuplicate(args []string) []string {
 		}
 	}
 	return result
-}
-
-func reduceFraction(fraction [2]int) [2]int {
-	numerator := big.NewInt(int64(fraction[0]))
-	denominator := big.NewInt(int64(fraction[1]))
-	gcd := big.NewInt(1)
-	gcd = gcd.GCD(nil, nil, numerator, denominator)
-	if gcd.Int64() > 1 {
-		fraction[0] /= int(gcd.Int64())
-		fraction[1] /= int(gcd.Int64())
-		fraction = reduceFraction(fraction)
-	}
-	return fraction
 }
