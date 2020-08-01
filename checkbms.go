@@ -155,13 +155,13 @@ func (c Command) IsInRange(value string) (bool, error) {
 	case Path:
 		if bv, ok := c.BoundaryValue.(*[]string); ok && len(*bv) >= 1 {
 			for _, ext := range *bv {
-				if filepath.Ext(value) == ext {
+				if strings.ToLower(filepath.Ext(value)) == ext {
 					return true, nil
 				}
 			}
 			return false, nil
 		} else {
-			return false, fmt.Errorf("Error IsInRange: BoundaryValue is invalid")
+			return false, fmt.Errorf("Debug error IsInRange: BoundaryValue is invalid")
 		}
 	}
 	return false, nil
@@ -257,12 +257,11 @@ func (pi *patternIterator) next() (moment *patternMoment, logs *[]string) {
 					return nil, logs
 				}
 				var beforeMeasure int
-				for isFirst := true; pi.index < len(*pi.patterns); pi.index++ {
+				for initIndex := pi.index; pi.index < len(*pi.patterns); pi.index++ {
 					def := (*pi.patterns)[pi.index]
 					pi.measure, _ = strconv.Atoi(def.Command[:3])
-					if isFirst {
+					if pi.index == initIndex {
 						beforeMeasure = pi.measure
-						isFirst = false
 					}
 					if pi.measure < beforeMeasure { // TODO #IFを考慮
 						*logs = append(*logs, fmt.Sprintf("WARNING: Measure order is not ascending: prev=%d next=%d", beforeMeasure, pi.measure))
@@ -557,9 +556,10 @@ func loadBmsFile(path string) (*BmsFile, error) {
 		if !correctLine {
 			for _, command := range randomCommands {
 				if strings.HasPrefix(strings.ToLower(line), "#" + command + " ") || strings.ToLower(line) == ("#" + command) {
+					// TODO: #IF対応
 					/*length := utf8.RuneCountInString(command) + 1
-					  data := strings.TrimSpace(line[length:])*/
-					bmsFile.Pattern = append(bmsFile.Pattern, definition{strings.ToLower(line[1:6]), strings.ToLower(line[7:])})
+					data := strings.TrimSpace(line[length:])
+					bmsFile.Pattern = append(bmsFile.Pattern, definition{command, strings.ToLower(length)})*/
 					correctLine = true
 					break
 				}
@@ -787,7 +787,7 @@ func checkBmsFile(bmsFile *BmsFile) {
 			fp := fraction{moment.Position.Numerator, moment.Position.Denominator}
 			fp.reduce()
 			for _, dup := range duplicates {
-				bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: Used WAV is duplicate(#%3d, %d/%d): %s * %d",
+				bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: Used WAV is duplicate(#%3d,%d/%d): %s * %d",
 					moment.Measure, fp.Numerator, fp.Denominator, strings.ToUpper(dup), objCounts[dup]))
 			}
 		}
