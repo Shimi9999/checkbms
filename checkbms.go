@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"bytes"
 	"regexp"
+	"sort"
 	"math"
 	"math/big"
 	"io/ioutil"
@@ -18,8 +19,8 @@ import (
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/transform"
 	"github.com/saintfish/chardet"
-	/*"./bmsobject"
-	  "./bmsloader"*/
+
+	"./diff"
 )
 
 type File struct {
@@ -56,6 +57,8 @@ type BmsFile struct {
 	HeaderBmp []definition
 	HeaderNumbering []definition
 	Pattern []definition
+	BmsWavObjs *[]bmsObj
+	BmsBmpObjs *[]bmsObj
 	Keymode int // 5, 7, 9, 10, 14, 24, 48
 	TotalNotes int
 	Logs []string
@@ -78,6 +81,20 @@ func (bf BmsFile) CalculateDefaultTotal() float64 {
 	} else {
 		return math.Max(260.0, 7.605 * tn / (0.01 * tn + 6.5))
 	}
+}
+func fileName(value string, defs *[]definition) string {
+	for _, def := range *defs { // TODO 高速化？ソートしてO(logn)にする？
+		if def.Command[3:] == value {
+			return def.Value
+		}
+	}
+	return ""
+}
+func (bf BmsFile) wavFileName(value string) string {
+	return fileName(value, &bf.HeaderWav)
+}
+func (bf BmsFile) bmpFileName(value string) string {
+	return fileName(value, &bf.HeaderBmp)
 }
 
 type NonBmsFile struct {
@@ -204,6 +221,34 @@ var NUMBERING_COMMANDS = []Command{
 	Command{"scroll", Float, Unnecessary, &[]float64{math.SmallestNonzeroFloat64, math.MaxFloat64}},
 }
 
+var BMP_CHANNNELS = []string{"04", "06", "07"}
+var WAV_CHANNNELS = []string{"01",
+	"11", "12", "13", "14", "15", "16", "17", "18", "19",
+	"21", "22", "23", "24", "25", "26", "27", "28", "29",
+	"31", "32", "33", "34", "35", "36", "37", "38", "39",
+	"41", "42", "43", "44", "45", "46", "47", "48", "49",
+	"51", "52", "53", "54", "55", "56", "57", "58", "59",
+	"61", "62", "63", "64", "65", "66", "67", "68", "69",
+}
+var NOTE_CHANNNELS = []string{
+	"11", "12", "13", "14", "15", "16", "17", "18", "19",
+	"21", "22", "23", "24", "25", "26", "27", "28", "29",
+	"51", "52", "53", "54", "55", "56", "57", "58", "59",
+	"61", "62", "63", "64", "65", "66", "67", "68", "69",
+}
+var LN_CHANNNELS = []string{
+	"51", "52", "53", "54", "55", "56", "57", "58", "59",
+	"61", "62", "63", "64", "65", "66", "67", "68", "69",
+}
+func matchChannel(ch string, channels *[]string) bool {
+	for _, c := range *channels {
+		if ch == c {
+			return true
+		}
+	}
+	return false
+}
+
 type fraction struct {
 	Numerator int
 	Denominator int
@@ -221,6 +266,59 @@ func (f *fraction) reduce() {
 		f.Denominator /= int(gcd.Int64())
 		f.reduce()
 	}
+}
+
+type bmsObj struct {
+	Channel string
+	Measure int
+	Position fraction
+	Value int // 36進数→10進数
+	IsLNEnd bool
+}
+func (bo bmsObj) time() float64 {
+	return float64(bo.Measure) + bo.Position.value()
+}
+func (bf BmsFile)bmsObjs() (*[]bmsObj, *[]bmsObj) {
+	wavObjs := []bmsObj{}
+	bmpObjs := []bmsObj{}
+	ongoingLNs := map[int]bool{}
+	for _, def := range bf.Pattern {
+		channel := def.Command[3:]
+		chint, _ := strconv.Atoi(def.Command[3:])
+		measure, _ := strconv.Atoi(def.Command[:3])
+		for i := 0; i < len(def.Value)/2; i++ {
+			valStr := def.Value[i*2:i*2+2]
+			val, _ := strconv.ParseInt(valStr, 36, 64)
+			if val == 0 {
+				continue
+			}
+			pos := fraction{i, len(def.Value)/2}
+			obj := bmsObj{Channel: channel, Measure: measure, Position: pos, Value: int(val)}
+			if matchChannel(channel, &WAV_CHANNNELS) {
+				if valStr == bf.Header["lnobj"] {
+					obj.IsLNEnd = true
+					ongoingLNs[chint+40] = false
+				}	else if matchChannel(channel, &LN_CHANNNELS) {
+					if ongoingLNs[chint] {
+						obj.IsLNEnd = true
+						ongoingLNs[chint] = false
+					} else {
+						ongoingLNs[chint] = true
+					}
+				}
+				wavObjs = append(wavObjs, obj)
+			} else if matchChannel(channel, &BMP_CHANNNELS) {
+				bmpObjs = append(bmpObjs, obj)
+			}
+		}
+	}
+	sortObjs := func(objs *[]bmsObj) {
+		sort.Slice(*objs, func(i, j int) bool { return (*objs)[i].Value < (*objs)[j].Value })
+		sort.SliceStable(*objs, func(i, j int) bool { return (*objs)[i].time() < (*objs)[j].time() })
+	}
+	sortObjs(&wavObjs)
+	sortObjs(&bmpObjs)
+	return &wavObjs, &bmpObjs
 }
 
 type note struct {
@@ -622,6 +720,8 @@ func loadBmsFile(path string) (*BmsFile, error) {
 		bmsFile.Keymode = 5
 	}
 
+	bmsFile.BmsWavObjs, bmsFile.BmsBmpObjs = bmsFile.bmsObjs()
+
 	return bmsFile, nil
 }
 
@@ -758,19 +858,11 @@ func checkBmsFile(bmsFile *BmsFile) {
 			}
 		}
 	}
-	bmpChannels := []string{"04", "06", "07"/*, "0A"*/}
-	checkDefinedObjIsUsed("BMP", &bmsFile.HeaderBmp, &bmpChannels, "")
-	wavChannels := []string{"01", "11", "12", "13", "14", "15", "16", "17", "18", "19",
-		"21", "22", "23", "24", "25", "26", "27", "28", "29",
-		"31", "32", "33", "34", "35", "36", "37", "38", "39",
-		"41", "42", "43", "44", "45", "46", "47", "48", "49",
-		"51", "52", "53", "54", "55", "56", "57", "58", "59",
-		"61", "62", "63", "64", "65", "66", "67", "68", "69",
-	}
-	checkDefinedObjIsUsed("WAV", &bmsFile.HeaderWav, &wavChannels, strings.ToLower(bmsFile.Header["lnobj"]))
+	checkDefinedObjIsUsed("BMP", &bmsFile.HeaderBmp, &BMP_CHANNNELS, "")
+	checkDefinedObjIsUsed("WAV", &bmsFile.HeaderWav, &WAV_CHANNNELS, strings.ToLower(bmsFile.Header["lnobj"]))
 
 	// Check WAV duplicate
-	pi := newPattenIterator(&bmsFile.Pattern, &wavChannels)
+	pi := newPattenIterator(&bmsFile.Pattern, &WAV_CHANNNELS)
 	for moment, logs := pi.next(); moment != nil; moment, logs = pi.next() {
 		if logs != nil && len(*logs) > 0 { // TODO 小節番号に関するログは事前にまとめて出しておく？
 			bmsFile.Logs = append(bmsFile.Logs, *logs...)
@@ -794,18 +886,13 @@ func checkBmsFile(bmsFile *BmsFile) {
 	}
 
 	// Check end of LN exists
-	notesChannels := []string{"11", "12", "13", "14", "15", "16", "17", "18", "19",
-		"21", "22", "23", "24", "25", "26", "27", "28", "29",
-		"51", "52", "53", "54", "55", "56", "57", "58", "59",
-		"61", "62", "63", "64", "65", "66", "67", "68", "69",
-	}
 	type LNstart struct {
 		Measure int
 		Position fraction
 		Value string
 	}
 	ongoingLNs := map[string]*LNstart{}
-	pi = newPattenIterator(&bmsFile.Pattern, &notesChannels)
+	pi = newPattenIterator(&bmsFile.Pattern, &NOTE_CHANNNELS)
 	for moment, _ := pi.next(); moment != nil; moment, _ = pi.next() {
 		for _, obj := range moment.Objs {
 			chint, _ := strconv.Atoi(obj.Channel)
@@ -964,6 +1051,110 @@ func checkBmsDirectory(bmsDir *Directory) {
 		}
 	}
 
+	// diff
+	// ファイルごとの比較ではなく、定義・配置ごとの比較にする？
+	missingLog := func(path, val string) string {
+		return fmt.Sprintf(" Missing(%s): %s", path, val)
+	}
+	for i := 0; i < len(bmsDir.BmsFiles); i++ {
+		for j := i+1; j < len(bmsDir.BmsFiles); j++ {
+			diffDefs := func(label string, iBmsFile, jBmsFile *BmsFile) {
+				var iDefs, jDefs *[]definition
+				switch label {
+				case "WAV":
+					iDefs, jDefs = &iBmsFile.HeaderWav, &jBmsFile.HeaderWav
+				case "BMP":
+					iDefs, jDefs = &iBmsFile.HeaderBmp, &jBmsFile.HeaderBmp
+				}
+				iDefStrs, jDefStrs := []string{}, []string{}
+				for _, def := range *iDefs {
+					iDefStrs = append(iDefStrs, fmt.Sprintf("#%s %s", strings.ToUpper(def.Command), def.Value))
+				}
+				for _, def := range *jDefs {
+					jDefStrs = append(jDefStrs, fmt.Sprintf("#%s %s", strings.ToUpper(def.Command), def.Value))
+				}
+				ed, ses := diff.Onp(&iDefStrs, &jDefStrs)
+				if ed > 0 {
+					logs = append(logs, fmt.Sprintf("WARNING: There are %d differences in %s definitions: %s %s",
+						ed, label, iBmsFile.Path, jBmsFile.Path))
+					ii, jj := 0, 0
+				  for _, r := range ses {
+				    switch r {
+				    case '=':
+				      ii++
+				      jj++
+				    case '+':
+							logs = append(logs, missingLog(iBmsFile.Path, jDefStrs[jj]))
+				      jj++
+				    case '-':
+							logs = append(logs, missingLog(jBmsFile.Path, iDefStrs[ii]))
+				      ii++
+				    }
+				  }
+				}
+			}
+			diffDefs("WAV", &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j])
+			diffDefs("BMP", &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j])
+
+			diffObjs := func(label string, iBmsFile, jBmsFile *BmsFile) {
+				toString := func(bo bmsObj, defs *[]definition) string {
+					val := strconv.FormatInt(int64(bo.Value), 36)
+					if len(val) == 1 {
+						val = "0" + val
+					}
+					return fmt.Sprintf("#%03d %s (%d/%d) #%s%s (%s)",
+						bo.Measure, bo.Channel, bo.Position.Numerator, bo.Position.Denominator, label, strings.ToUpper(val), fileName(val, defs))
+				}
+				_logs := []string{}
+				var iObjs, jObjs *[]bmsObj
+				var iDefs, jDefs *[]definition
+				switch label {
+				case "WAV":
+					iObjs, jObjs = iBmsFile.BmsWavObjs, jBmsFile.BmsWavObjs
+					iDefs, jDefs = &iBmsFile.HeaderWav, &jBmsFile.HeaderWav
+				case "BMP":
+					iObjs, jObjs = iBmsFile.BmsBmpObjs, jBmsFile.BmsBmpObjs
+					iDefs, jDefs = &iBmsFile.HeaderBmp, &jBmsFile.HeaderBmp
+				}
+				ii, jj := 0, 0
+				for ; ii < len(*iObjs) && jj < len(*jObjs); {
+					iObj, jObj := (*iObjs)[ii], (*jObjs)[jj]
+					if iObj.IsLNEnd {
+						ii++
+						continue
+					}
+					if jObj.IsLNEnd {
+						jj++
+						continue
+					}
+					if iObj.time() == jObj.time() && iObj.Value == jObj.Value {
+						ii++
+						jj++
+					} else if iObj.time() < jObj.time() || (iObj.time() == jObj.time() && iObj.Value < jObj.Value) {
+						_logs = append(_logs, missingLog(jBmsFile.Path, toString(iObj, iDefs)))
+						ii++
+					} else {
+						_logs = append(_logs, missingLog(iBmsFile.Path, toString(jObj, jDefs)))
+						jj++
+					}
+				}
+				for ; ii < len(*iObjs)-1; ii++ {
+					_logs = append(_logs, missingLog(jBmsFile.Path, toString((*iObjs)[ii], iDefs)))
+				}
+				for ; jj < len(*jObjs)-1; jj++ {
+					_logs = append(_logs, missingLog(iBmsFile.Path, toString((*jObjs)[jj], jDefs)))
+				}
+				if len(_logs) > 0 {
+					s := fmt.Sprintf("WARNING: There are %d differences in %s objects: %s, %s",
+						len(_logs), label, iBmsFile.Path, jBmsFile.Path)
+					logs = append(append(logs, s), _logs...)
+				}
+			}
+			diffObjs("WAV", &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j])
+			diffObjs("BMP", &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j])
+		}
+	}
+
 	if len(logs) > 0 {
 		dirPath := filepath.Clean(bmsDir.Path)
 		if dirPath == "." {
@@ -1011,15 +1202,6 @@ func isUTF8(path string) (bool, error) {
 		return true, nil
 	}
 	return false, nil
-}
-
-func matchChannel(ch string, channels *[]string) bool {
-	for _, c := range *channels {
-		if ch == c {
-			return true
-		}
-	}
-	return false
 }
 
 func removeDuplicate(args []string) []string {
