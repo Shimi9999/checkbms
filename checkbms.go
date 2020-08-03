@@ -90,6 +90,13 @@ func fileName(index string, defs *[]definition) string { // WAV or BMPを選ば�
 	}
 	return ""
 }
+func (bf BmsFile) wavFileName(value string) string {
+  return fileName(value, &bf.HeaderWav)
+}
+func (bf BmsFile) bmpFileName(value string) string {
+  return fileName(value, &bf.HeaderBmp)
+}
+
 
 type NonBmsFile struct {
 	File
@@ -271,6 +278,9 @@ type bmsObj struct {
 }
 func (bo bmsObj) time() float64 {
 	return float64(bo.Measure) + bo.Position.value()
+}
+func (bo bmsObj) value36() string {
+	return strconv.FormatInt(int64(bo.Value), 36)
 }
 func (bf BmsFile) bmsObjs() (*[]bmsObj, *[]bmsObj) {
 	wavObjs := []bmsObj{}
@@ -863,7 +873,10 @@ func checkBmsFile(bmsFile *BmsFile) {
 		}
 		duplicates := []string{}
 		objCounts := map[string]int{}
-		for _, obj := range moment.Objs { // TODO 無音ノーツを無視する
+		for _, obj := range moment.Objs {
+			if bmsFile.wavFileName(strings.ToUpper(obj.Value)) == "" {
+				continue
+			}
 			if objCounts[obj.Value] == 1 {
 				duplicates = append(duplicates, obj.Value)
 			}
@@ -873,8 +886,8 @@ func checkBmsFile(bmsFile *BmsFile) {
 			fp := fraction{moment.Position.Numerator, moment.Position.Denominator}
 			fp.reduce()
 			for _, dup := range duplicates {
-				bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: Used WAV is duplicate(#%3d,%d/%d): %s * %d",
-					moment.Measure, fp.Numerator, fp.Denominator, strings.ToUpper(dup), objCounts[dup]))
+				bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: Used WAV is duplicate(#%03d,%d/%d): %s (%s) * %d",
+					moment.Measure, fp.Numerator, fp.Denominator, strings.ToUpper(dup), bmsFile.wavFileName(strings.ToUpper(dup)), objCounts[dup]))
 			}
 		}
 	}
@@ -1092,7 +1105,7 @@ func checkBmsDirectory(bmsDir *Directory) {
 
 			diffObjs := func(label string, iBmsFile, jBmsFile *BmsFile) {
 				toString := func(bo bmsObj, defs *[]definition) string {
-					val := strconv.FormatInt(int64(bo.Value), 36)
+					val := bo.value36()
 					if len(val) == 1 {
 						val = "0" + val
 					}
@@ -1125,18 +1138,28 @@ func checkBmsDirectory(bmsDir *Directory) {
 						ii++
 						jj++
 					} else if iObj.time() < jObj.time() || (iObj.time() == jObj.time() && iObj.Value < jObj.Value) {
-						_logs = append(_logs, missingLog(jBmsFile.Path, toString(iObj, iDefs)))
+						if fileName(iObj.value36(), iDefs) != "" {
+							_logs = append(_logs, missingLog(jBmsFile.Path, toString(iObj, iDefs)))
+						}
 						ii++
 					} else {
-						_logs = append(_logs, missingLog(iBmsFile.Path, toString(jObj, jDefs)))
+						if fileName(jObj.value36(), jDefs) != "" {
+							_logs = append(_logs, missingLog(iBmsFile.Path, toString(jObj, jDefs)))
+						}
 						jj++
 					}
 				}
 				for ; ii < len(*iObjs)-1; ii++ {
-					_logs = append(_logs, missingLog(jBmsFile.Path, toString((*iObjs)[ii], iDefs)))
+					iObj := (*iObjs)[ii]
+					if !iObj.IsLNEnd && fileName(iObj.value36(), iDefs) != "" {
+						_logs = append(_logs, missingLog(jBmsFile.Path, toString(iObj, iDefs)))
+					}
 				}
 				for ; jj < len(*jObjs)-1; jj++ {
-					_logs = append(_logs, missingLog(iBmsFile.Path, toString((*jObjs)[jj], jDefs)))
+					jObj := (*jObjs)[jj]
+					if !jObj.IsLNEnd && fileName(jObj.value36(), jDefs) != "" {
+						_logs = append(_logs, missingLog(iBmsFile.Path, toString(jObj, jDefs)))
+					}
 				}
 				if len(_logs) > 0 {
 					s := fmt.Sprintf("WARNING: There are %d differences in %s objects: %s, %s",
