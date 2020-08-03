@@ -37,7 +37,7 @@ type Directory struct {
 	Directories []Directory
 }
 
-func NewDirectory(path string) *Directory {
+func newDirectory(path string) *Directory {
 	var d Directory
 	d.Path = path
 	d.BmsFiles = make([]BmsFile, 0)
@@ -63,7 +63,7 @@ type BmsFile struct {
 	TotalNotes int
 	Logs []string
 }
-func NewBmsFile(path string) *BmsFile {
+func newBmsFile(path string) *BmsFile {
 	var bf BmsFile
 	bf.Path = path
 	bf.Header = make(map[string]string, 0)
@@ -74,7 +74,7 @@ func NewBmsFile(path string) *BmsFile {
 	bf.Logs = make([]string, 0)
 	return &bf
 }
-func (bf BmsFile) CalculateDefaultTotal() float64 {
+func (bf BmsFile) calculateDefaultTotal() float64 {
 	tn := float64(bf.TotalNotes)
 	if bf.Keymode >= 24 {
 		return math.Max(300.0, 7.605 * (tn + 100.0) / (0.01 * tn + 6.5))
@@ -82,26 +82,20 @@ func (bf BmsFile) CalculateDefaultTotal() float64 {
 		return math.Max(260.0, 7.605 * tn / (0.01 * tn + 6.5))
 	}
 }
-func fileName(value string, defs *[]definition) string {
+func fileName(index string, defs *[]definition) string { // WAV or BMPを選ばせる？
 	for _, def := range *defs { // TODO 高速化？ソートしてO(logn)にする？
-		if def.Command[3:] == value {
+		if def.Command[3:] == index {
 			return def.Value
 		}
 	}
 	return ""
-}
-func (bf BmsFile) wavFileName(value string) string {
-	return fileName(value, &bf.HeaderWav)
-}
-func (bf BmsFile) bmpFileName(value string) string {
-	return fileName(value, &bf.HeaderBmp)
 }
 
 type NonBmsFile struct {
 	File
 	Used bool
 }
-func NewNonBmsFile(path string) *NonBmsFile {
+func newNonBmsFile(path string) *NonBmsFile {
 	var nbf NonBmsFile
 	nbf.Path = path
 	return &nbf
@@ -127,7 +121,7 @@ type Command struct {
 	BoundaryValue interface{} // Intなら0と100,-10とnilとか。Stringなら*とか(多分不要)。Pathなら許容する拡張子.oog、.wav
 	//Check func(string) *[]string // 引数の値に対してチェックをしてエラーメッセージ(string)のスライスを返す関数
 }
-func (c Command) IsInRange(value string) (bool, error) {
+func (c Command) isInRange(value string) (bool, error) {
 	switch c.Type {
 	case Int:
 		intValue, err := strconv.Atoi(value)
@@ -141,7 +135,7 @@ func (c Command) IsInRange(value string) (bool, error) {
 				return false, nil
 			}
 		} else {
-			return false, fmt.Errorf("Error IsInRange: BoundaryValue is invalid")
+			return false, fmt.Errorf("Error isInRange: BoundaryValue is invalid")
 		}
 	case Float:
 		floatValue, err := strconv.ParseFloat(value, 64)
@@ -155,7 +149,7 @@ func (c Command) IsInRange(value string) (bool, error) {
 				return false, nil
 			}
 		} else {
-			return false, fmt.Errorf("Error IsInRange: BoundaryValue is invalid")
+			return false, fmt.Errorf("Error isInRange: BoundaryValue is invalid")
 		}
 	case String:
 		if c.BoundaryValue == nil {
@@ -166,7 +160,7 @@ func (c Command) IsInRange(value string) (bool, error) {
 				return true, nil
 			}
 		} else {
-			return false, fmt.Errorf("Error IsInRange: BoundaryValue is invalid")
+			return false, fmt.Errorf("Error isInRange: BoundaryValue is invalid")
 		}
 		return false, nil
 	case Path:
@@ -178,7 +172,7 @@ func (c Command) IsInRange(value string) (bool, error) {
 			}
 			return false, nil
 		} else {
-			return false, fmt.Errorf("Debug error IsInRange: BoundaryValue is invalid")
+			return false, fmt.Errorf("Debug error isInRange: BoundaryValue is invalid")
 		}
 	}
 	return false, nil
@@ -278,7 +272,7 @@ type bmsObj struct {
 func (bo bmsObj) time() float64 {
 	return float64(bo.Measure) + bo.Position.value()
 }
-func (bf BmsFile)bmsObjs() (*[]bmsObj, *[]bmsObj) {
+func (bf BmsFile) bmsObjs() (*[]bmsObj, *[]bmsObj) {
 	wavObjs := []bmsObj{}
 	bmpObjs := []bmsObj{}
 	ongoingLNs := map[int]bool{}
@@ -496,7 +490,7 @@ func scanDirectory(path string) error {
 }
 
 func scanBmsDirectory(path string, isRootDir bool) (*Directory, error) {
-	dir := NewDirectory(path)
+	dir := newDirectory(path)
 	files, _ := ioutil.ReadDir(path)
 
 	for _, f := range files {
@@ -509,7 +503,7 @@ func scanBmsDirectory(path string, isRootDir bool) (*Directory, error) {
 		if isBmsPath(f.Name()) {
 			var bmsfile *BmsFile
 			if filepath.Ext(filePath) == ".bmson" {
-				bmsfile = NewBmsFile(filePath) // TODO 仮 loadBmson作る
+				bmsfile = newBmsFile(filePath) // TODO 仮 loadBmson作る
 				//bmsfile, err := LoadBmson(bmspath)
 			} else {
 				if isUtf8, err := isUTF8(filePath); err == nil && isUtf8 {
@@ -529,7 +523,7 @@ func scanBmsDirectory(path string, isRootDir bool) (*Directory, error) {
 			}
 			dir.Directories = append(dir.Directories, *innnerDir)
 		} else {
-			dir.NonBmsFiles = append(dir.NonBmsFiles, *NewNonBmsFile(filePath))
+			dir.NonBmsFiles = append(dir.NonBmsFiles, *newNonBmsFile(filePath))
 		}
 	}
 	if isRootDir {
@@ -555,7 +549,7 @@ func loadBmsFile(path string) (*BmsFile, error) {
 	scanner.Buffer(buf, maxBufSize)
 	lineNumber := 0
 
-	bmsFile := NewBmsFile(path)
+	bmsFile := newBmsFile(path)
 	fieldBorders := []string{"HEADER FIELD", "EXPANSION FIELD", "MAIN DATA FIELD"}
 	randomCommands := []string{"random", "if", "endif"}
 	for scanner.Scan() {
@@ -738,9 +732,9 @@ func checkBmsFile(bmsFile *BmsFile) {
 			}
 		} else if val == "" {
 			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: #%s value is empty", strings.ToUpper(command.Name)))
-		} else if isInRange, err := command.IsInRange(val); err != nil || !isInRange {
+		} else if isInRange, err := command.isInRange(val); err != nil || !isInRange {
 			if err != nil {
-				fmt.Println("DEBUG ERROR: IsInRange return error")
+				fmt.Println("DEBUG ERROR: isInRange return error")
 			}
 			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("ERROR: #%s has invalid value: %s", strings.ToUpper(command.Name), val))
 		} else if command.Name == "rank" { // ここらへんはCommand型のCheck関数的なものに置き換えたい
@@ -757,7 +751,7 @@ func checkBmsFile(bmsFile *BmsFile) {
 			if total < 100 {
 				bmsFile.Logs = append(bmsFile.Logs, "WARNING: #TOTAL is under 100: " + val)
 			} else {
-				defaultTotal := bmsFile.CalculateDefaultTotal()
+				defaultTotal := bmsFile.calculateDefaultTotal()
 				overRate := 1.6
 				totalPerNotes := total / float64(bmsFile.TotalNotes) // TODO 適切な基準値は？
 				if total > defaultTotal * overRate && totalPerNotes > 0.35 {
@@ -793,9 +787,9 @@ func checkBmsFile(bmsFile *BmsFile) {
 				defined[i] = true
 				if def.Value == "" {
 					bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: #%s value is empty", strings.ToUpper(def.Command)))
-				} else if isInRange, err := nc.IsInRange(def.Value); err != nil || !isInRange {
+				} else if isInRange, err := nc.isInRange(def.Value); err != nil || !isInRange {
 					if err != nil {
-						bmsFile.Logs = append(bmsFile.Logs, "DEBUG ERROR: IsInRange return error: " + def.Value)
+						bmsFile.Logs = append(bmsFile.Logs, "DEBUG ERROR: isInRange return error: " + def.Value)
 					}
 					bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("ERROR: #%s has invalid value: %s", strings.ToUpper(def.Command), def.Value))
 				} else if strings.HasPrefix(def.Command, "wav") && filepath.Ext(def.Value) != ".wav" && hasNoWavExtDef.Command == "" {
