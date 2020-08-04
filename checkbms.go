@@ -1042,7 +1042,7 @@ func checkBmsDirectory(bmsDir *Directory) {
 
 	isPreview := func(path string) bool {
 		for _, ext := range SOUND_EXTS {
-			if relativePathFromBmsRoot(path) == ("preview" + ext) { // TODO preview*.でも再生される？
+			if regexp.MustCompile(`^preview.*` + ext + `$`).MatchString(relativePathFromBmsRoot(path)) {
 				return true
 			}
 		}
