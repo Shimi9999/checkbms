@@ -532,6 +532,7 @@ func scanBmsDirectory(path string, isRootDir bool) (*Directory, error) {
 			}
 			dir.Directories = append(dir.Directories, *innnerDir)
 			dir.NonBmsFiles = append(dir.NonBmsFiles, innnerDir.NonBmsFiles...)
+			dir.Directories = append(dir.Directories, innnerDir.Directories...)
 		} else {
 			dir.NonBmsFiles = append(dir.NonBmsFiles, *newNonBmsFile(filePath))
 		}
@@ -1051,6 +1052,11 @@ func checkBmsDirectory(bmsDir *Directory) {
 	for _, nonBmsFile := range bmsDir.NonBmsFiles {
 		if !nonBmsFile.Used && !hasExts(nonBmsFile.Path, &ignoreExts) && !isPreview(nonBmsFile.Path) {
 			logs = append(logs, "NOTICE: This file is not used: " + relativePathFromBmsRoot(nonBmsFile.Path))
+		}
+	}
+	for _, dir := range bmsDir.Directories {
+		if len(dir.BmsFiles) == 0 && len(dir.NonBmsFiles) == 0 && len(dir.Directories) == 0 {
+			logs = append(logs, "NOTICE: This directory is empty: " + relativePathFromBmsRoot(dir.Path))
 		}
 	}
 
