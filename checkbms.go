@@ -558,11 +558,10 @@ func loadBmsFile(path string) (*BmsFile, error) {
 	scanner := bufio.NewScanner(file)
 	buf := make([]byte, initialBufSize)
 	scanner.Buffer(buf, maxBufSize)
-	lineNumber := 0
 
 	bmsFile := newBmsFile(path)
 	randomCommands := []string{"random", "if", "endif"}
-	for scanner.Scan() {
+	for lineNumber := 0; scanner.Scan(); lineNumber++ {
 		/*if lineNumber == 0 && bytes.HasPrefix(([]byte)(scanner.Text()), []byte{0xef, 0xbb, 0xbf}) {
 		  fmt.Println("Error, character code is UTF-8(BOM):", path)
 		}*/
@@ -646,9 +645,17 @@ func loadBmsFile(path string) (*BmsFile, error) {
 			}
 		}
 		if !correctLine {
-			if regexp.MustCompile(`#[0-9a-z]{5}:.+`).MatchString(strings.ToLower(line)) {
+			if regexp.MustCompile(`#[0-9]{3}[0-9a-z]{2}:.+`).MatchString(strings.ToLower(line)) {
 				data := strings.TrimSpace(line[7:])
-				bmsFile.Pattern = append(bmsFile.Pattern, definition{strings.ToLower(line[1:6]), strings.ToLower(data)})
+				if len(data) % 2 == 0 && regexp.MustCompile(`^[0-9a-zA-Z]+$`).MatchString(data) { // TODO invalid lineではなくinvalid valueとして出力したい
+					bmsFile.Pattern = append(bmsFile.Pattern, definition{strings.ToLower(line[1:6]), strings.ToLower(data)})
+					correctLine = true
+				}
+			}
+		}
+		if !correctLine {
+			if regexp.MustCompile(`#[0-9]{3}sc:.+`).MatchString(strings.ToLower(line)) { // SCROLL Speed
+				bmsFile.Pattern = append(bmsFile.Pattern, definition{strings.ToLower(line[1:6]), strings.ToLower(line[7:])})
 				correctLine = true
 			}
 		}
@@ -664,17 +671,10 @@ func loadBmsFile(path string) (*BmsFile, error) {
 				}
 			}
 		}
-		if !correctLine {
-			if regexp.MustCompile(`#[0-9]{3}sc:.+`).MatchString(strings.ToLower(line)) {
-				bmsFile.Pattern = append(bmsFile.Pattern, definition{strings.ToLower(line[1:6]), strings.ToLower(line[7:])})
-				correctLine = true
-			}
-		}
 
 		if !correctLine {
 			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("ERROR: Invalid line(%d): %s", lineNumber, line))
 		}
-		lineNumber++
 	}
 	if scanner.Err() != nil {
 		return nil, fmt.Errorf("BMSfile scan error: " + scanner.Err().Error())
