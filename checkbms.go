@@ -36,7 +36,6 @@ type Directory struct {
 	NonBmsFiles []NonBmsFile
 	Directories []Directory
 }
-
 func newDirectory(path string) *Directory {
 	var d Directory
 	d.Path = path
@@ -510,7 +509,7 @@ func scanBmsDirectory(path string, isRootDir bool) (*Directory, error) {
 				fmt.Println("ERROR: This filename has environment-dependent characters:", f.Name())
 			}
 		}
-		if isBmsPath(f.Name()) {
+		if isRootDir && isBmsPath(f.Name()) {
 			var bmsfile *BmsFile
 			if filepath.Ext(filePath) == ".bmson" {
 				bmsfile = newBmsFile(filePath) // TODO 仮 loadBmson作る
@@ -532,6 +531,7 @@ func scanBmsDirectory(path string, isRootDir bool) (*Directory, error) {
 				return nil, err
 			}
 			dir.Directories = append(dir.Directories, *innnerDir)
+			dir.NonBmsFiles = append(dir.NonBmsFiles, innnerDir.NonBmsFiles...)
 		} else {
 			dir.NonBmsFiles = append(dir.NonBmsFiles, *newNonBmsFile(filePath))
 		}
@@ -623,7 +623,7 @@ func loadBmsFile(path string) (*BmsFile, error) {
 						isDuplicate := false
 						for i, _ := range *defs {
 							if (*defs)[i].Command == lineCommand {
-								bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: #%s is duplicate: old=%s new=%s\n",
+								bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: #%s is duplicate: old=%s new=%s",
 									strings.ToUpper(lineCommand), (*defs)[i].Value, data))
 								if data != "" {
 									(*defs)[i].Value = data
@@ -960,7 +960,7 @@ func checkBmsDirectory(bmsDir *Directory) {
 	containsInNonBmsFiles := func(path string, exts *[]string) bool {
 		contains := false // 拡張子補完の対称ファイルを全てUsedにする
 		definedFilePath := filepath.Clean(path)
-		for i, _ := range bmsDir.NonBmsFiles { // TODO フォルダ内フォルダ対応(単次元化する？)
+		for i, _ := range bmsDir.NonBmsFiles {
 			realFilePath := relativePathFromBmsRoot(bmsDir.NonBmsFiles[i].Path)
 			if definedFilePath == realFilePath {
 				bmsDir.NonBmsFiles[i].Used = true
