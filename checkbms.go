@@ -560,7 +560,6 @@ func loadBmsFile(path string) (*BmsFile, error) {
 	lineNumber := 0
 
 	bmsFile := newBmsFile(path)
-	fieldBorders := []string{"HEADER FIELD", "EXPANSION FIELD", "MAIN DATA FIELD"}
 	randomCommands := []string{"random", "if", "endif"}
 	for scanner.Scan() {
 		/*if lineNumber == 0 && bytes.HasPrefix(([]byte)(scanner.Text()), []byte{0xef, 0xbb, 0xbf}) {
@@ -581,11 +580,8 @@ func loadBmsFile(path string) (*BmsFile, error) {
 		}
 
 		correctLine := false
-		for _, border := range fieldBorders {
-			if strings.HasPrefix(line, "*---------------------- " + border) {
-				correctLine = true
-				break
-			}
+		if strings.HasPrefix(line, "*") { // jump comment line
+			correctLine = true
 		}
 		if !correctLine {
 			for _, command := range COMMANDS {
