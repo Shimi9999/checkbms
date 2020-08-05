@@ -648,9 +648,17 @@ func loadBmsFile(path string) (*BmsFile, error) {
 		if !correctLine {
 			if regexp.MustCompile(`#[0-9]{3}[0-9a-z]{2}:.+`).MatchString(strings.ToLower(line)) {
 				data := strings.TrimSpace(line[7:])
-				if len(data) % 2 == 0 && regexp.MustCompile(`^[0-9a-zA-Z]+$`).MatchString(data) { // TODO invalid lineではなくinvalid valueとして出力したい
-					bmsFile.Pattern = append(bmsFile.Pattern, definition{strings.ToLower(line[1:6]), strings.ToLower(data)})
-					correctLine = true
+				ch := strings.ToLower(line[4:6])
+				if ch == "02" {
+					if regexp.MustCompile(`^\d+(?:\.\d+)?$`).MatchString(data) {
+						bmsFile.Pattern = append(bmsFile.Pattern, definition{strings.ToLower(line[1:6]), strings.ToLower(data)})
+						correctLine = true
+					}
+				} else {
+					if len(data) % 2 == 0 && regexp.MustCompile(`^[0-9a-zA-Z]+$`).MatchString(data) { // TODO invalid lineではなくinvalid valueとして出力したい
+						bmsFile.Pattern = append(bmsFile.Pattern, definition{strings.ToLower(line[1:6]), strings.ToLower(data)})
+						correctLine = true
+					}
 				}
 			}
 		}
