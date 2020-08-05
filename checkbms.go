@@ -504,7 +504,7 @@ func scanBmsDirectory(path string, isRootDir bool) (*Directory, error) {
 
 	for _, f := range files {
 		filePath := filepath.Join(path, f.Name())
-		if !f.IsDir() || (f.IsDir() && !isRootDir) {
+		if !f.IsDir() || (f.IsDir() && !isRootDir) { // TODO チェック対象をbms関連ファイルと.txtのみにする
 			if containsEnvironmentDependentRune(f.Name()) {
 				fmt.Println("ERROR: This filename has environment-dependent characters:", f.Name())
 			}
@@ -581,7 +581,7 @@ func loadBmsFile(path string) (*BmsFile, error) {
 		}
 
 		correctLine := false
-		if strings.HasPrefix(line, "*") { // jump comment line
+		if strings.HasPrefix(line, "*") { // skip comment line
 			correctLine = true
 		}
 		if !correctLine {
@@ -753,7 +753,7 @@ func checkBmsFile(bmsFile *BmsFile) {
 				fmt.Println("DEBUG ERROR: isInRange return error")
 			}
 			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("ERROR: #%s has invalid value: %s", strings.ToUpper(command.Name), val))
-		} else if command.Name == "rank" { // ここらへんはCommand型のCheck関数的なものに置き換えたい
+		} else if command.Name == "rank" { // TODO ここらへんはCommand型のCheck関数的なものに置き換えたい？
 			rank, _ := strconv.Atoi(val)
 			if rank == 0 {
 				bmsFile.Logs = append(bmsFile.Logs, "NOTICE: #RANK is 0(VERY HARD)")
@@ -1070,7 +1070,7 @@ func checkBmsDirectory(bmsDir *Directory) {
 	}
 
 	// diff
-	// ファイルごとの比較ではなく、定義・配置ごとの比較にする？
+	// TODO ファイルごとの比較ではなく、定義・配置ごとの比較にする？
 	missingLog := func(path, val string) string {
 		return fmt.Sprintf(" Missing(%s): %s", path, val)
 	}
