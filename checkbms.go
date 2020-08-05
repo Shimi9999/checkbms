@@ -504,11 +504,6 @@ func scanBmsDirectory(path string, isRootDir bool) (*Directory, error) {
 
 	for _, f := range files {
 		filePath := filepath.Join(path, f.Name())
-		if !f.IsDir() || (f.IsDir() && !isRootDir) { // TODO チェック対象をbms関連ファイルと.txtのみにする
-			if containsEnvironmentDependentRune(f.Name()) {
-				fmt.Println("ERROR: This filename has environment-dependent characters:", f.Name())
-			}
-		}
 		if isRootDir && isBmsPath(f.Name()) {
 			var bmsfile *BmsFile
 			if filepath.Ext(filePath) == ".bmson" {
@@ -557,7 +552,7 @@ func loadBmsFile(path string) (*BmsFile, error) {
 	scanner.Buffer(buf, maxBufSize)
 
 	hasUtf8Bom := false
-	containsMultibyteRune := false
+	hasMultibyteRune := false
 	bmsFile := newBmsFile(path)
 	randomCommands := []string{"random", "if", "endif"}
 	for lineNumber := 0; scanner.Scan(); lineNumber++ {
@@ -577,8 +572,8 @@ func loadBmsFile(path string) (*BmsFile, error) {
 		if err != nil {
 			return nil, fmt.Errorf("ShiftJIS decode error: " + err.Error())
 		}
-		if !containsMultibyteRune && len(line) != utf8.RuneCountInString(line) {
-			containsMultibyteRune = true
+		if !hasMultibyteRune && containsMultibyteRune(line) {
+			hasMultibyteRune = true
 		}
 
 		correctLine := false
@@ -699,7 +694,7 @@ func loadBmsFile(path string) (*BmsFile, error) {
 		}
 	}
 	if isUtf8 {
-		if containsMultibyteRune {
+		if hasMultibyteRune {
 			bmsFile.Logs = append(bmsFile.Logs, "ERROR: Bmsfile charset is UTF-8 and contains multibyte characters")
 		} else {
 			bmsFile.Logs = append(bmsFile.Logs, "WARNING: Bmsfile charset is UTF-8")
@@ -1086,6 +1081,22 @@ func checkBmsDirectory(bmsDir *Directory) {
 		}
 	}
 
+	// check filename (must do after used check)
+	filenameLog := func(path string) {
+		logs = append(logs, "ERROR: This filename has environment-dependent characters: " + path)
+	}
+	for _, file := range bmsDir.BmsFiles {
+		if containsMultibyteRune(relativePathFromBmsRoot(file.Path)) {
+			filenameLog(file.Path)
+		}
+	}
+	for _, file := range bmsDir.NonBmsFiles {
+		if (file.Used || filepath.Ext(file.Path) == ".txt" || isPreview(file.Path)) &&
+		containsMultibyteRune(relativePathFromBmsRoot(file.Path)) {
+			filenameLog(file.Path)
+		}
+	}
+
 	// diff
 	// TODO ファイルごとの比較ではなく、定義・配置ごとの比較にする？
 	missingLog := func(path, val string) string {
@@ -1227,8 +1238,8 @@ func isBmsPath(path string) bool {
 	return hasExts(path, &bmsExts)
 }
 
-func containsEnvironmentDependentRune(text string) bool {
-	return !regexp.MustCompile(`^[0-9a-zA-Z !#$%&'\(\)\-\+\^@\[\];,\.=~\{\}_]+$`).MatchString(text)
+func containsMultibyteRune(text string) bool {
+	return len(text) != utf8.RuneCountInString(text)
 }
 
 func isUTF8(path string) (bool, error) {
