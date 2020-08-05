@@ -556,13 +556,14 @@ func loadBmsFile(path string) (*BmsFile, error) {
 	buf := make([]byte, initialBufSize)
 	scanner.Buffer(buf, maxBufSize)
 
+	hasUtf8Bom := false
 	containsMultibyteRune := false
 	bmsFile := newBmsFile(path)
 	randomCommands := []string{"random", "if", "endif"}
 	for lineNumber := 0; scanner.Scan(); lineNumber++ {
-		/*if lineNumber == 0 && bytes.HasPrefix(([]byte)(scanner.Text()), []byte{0xef, 0xbb, 0xbf}) {
-		  fmt.Println("Error, character code is UTF-8(BOM):", path)
-		}*/
+		if lineNumber == 0 && bytes.HasPrefix(([]byte)(scanner.Text()), []byte{0xef, 0xbb, 0xbf}) {
+		  hasUtf8Bom = true
+		}
 		if bytes.Equal(([]byte)(scanner.Text()), []byte{0xef, 0xbb, 0xbf}) {
 			// entrust isUTF8()
 			continue
@@ -689,7 +690,15 @@ func loadBmsFile(path string) (*BmsFile, error) {
 		return nil, fmt.Errorf("BMSfile scan error: " + scanner.Err().Error())
 	}
 
-	if isUtf8, err := isUTF8(path); err == nil && isUtf8 {
+	isUtf8 := hasUtf8Bom
+	if !isUtf8 {
+		var err error
+		isUtf8, err = isUTF8(path)
+		if err != nil {
+			isUtf8 = false
+		}
+	}
+	if isUtf8 {
 		if containsMultibyteRune {
 			bmsFile.Logs = append(bmsFile.Logs, "ERROR: Bmsfile charset is UTF-8 and contains multibyte characters")
 		} else {
