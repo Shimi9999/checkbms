@@ -515,9 +515,6 @@ func scanBmsDirectory(path string, isRootDir bool) (*Directory, error) {
 				bmsfile = newBmsFile(filePath) // TODO 仮 loadBmson作る
 				//bmsfile, err := LoadBmson(bmspath)
 			} else {
-				if isUtf8, err := isUTF8(filePath); err == nil && isUtf8 {
-					fmt.Println("ERROR: Bmsfile charset is UTF-8:", filePath)
-				}
 				var err error
 				bmsfile, err = loadBmsFile(filePath)
 				if err != nil {
@@ -559,6 +556,7 @@ func loadBmsFile(path string) (*BmsFile, error) {
 	buf := make([]byte, initialBufSize)
 	scanner.Buffer(buf, maxBufSize)
 
+	containsMultibyteRune := false
 	bmsFile := newBmsFile(path)
 	randomCommands := []string{"random", "if", "endif"}
 	for lineNumber := 0; scanner.Scan(); lineNumber++ {
@@ -577,6 +575,9 @@ func loadBmsFile(path string) (*BmsFile, error) {
 		line, _, err := transform.String(japanese.ShiftJIS.NewDecoder(), trimmedText)
 		if err != nil {
 			return nil, fmt.Errorf("ShiftJIS decode error: " + err.Error())
+		}
+		if !containsMultibyteRune && len(line) != utf8.RuneCountInString(line) {
+			containsMultibyteRune = true
 		}
 
 		correctLine := false
@@ -678,6 +679,14 @@ func loadBmsFile(path string) (*BmsFile, error) {
 	}
 	if scanner.Err() != nil {
 		return nil, fmt.Errorf("BMSfile scan error: " + scanner.Err().Error())
+	}
+
+	if isUtf8, err := isUTF8(path); err == nil && isUtf8 {
+		if containsMultibyteRune {
+			bmsFile.Logs = append(bmsFile.Logs, "ERROR: Bmsfile charset is UTF-8 and contains multibyte characters")
+		} else {
+			bmsFile.Logs = append(bmsFile.Logs, "WARNING: Bmsfile charset is UTF-8")
+		}
 	}
 
 	chmap := map[string]bool{"7k": false, "10k": false, "14k": false}
