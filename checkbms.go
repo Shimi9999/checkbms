@@ -56,8 +56,8 @@ type BmsFile struct {
 	HeaderBmp []definition
 	HeaderNumbering []definition
 	Pattern []definition
-	BmsWavObjs *[]bmsObj
-	BmsBmpObjs *[]bmsObj
+	BmsWavObjs []bmsObj
+	BmsBmpObjs []bmsObj
 	Keymode int // 5, 7, 9, 10, 14, 24, 48
 	TotalNotes int
 	Logs []string
@@ -81,8 +81,8 @@ func (bf BmsFile) calculateDefaultTotal() float64 {
 		return math.Max(260.0, 7.605 * tn / (0.01 * tn + 6.5))
 	}
 }
-func fileName(index string, defs *[]definition) string { // WAV or BMPを選ばせる？
-	for _, def := range *defs { // TODO 高速化？ソートしてO(logn)にする？
+func fileName(index string, defs []definition) string { // WAV or BMPを選ばせる？
+	for _, def := range defs { // TODO 高速化？ソートしてO(logn)にする？
 		if def.Command[3:] == index {
 			return def.Value
 		}
@@ -90,10 +90,10 @@ func fileName(index string, defs *[]definition) string { // WAV or BMPを選ば�
 	return ""
 }
 func (bf BmsFile) wavFileName(value string) string {
-  return fileName(value, &bf.HeaderWav)
+  return fileName(value, bf.HeaderWav)
 }
 func (bf BmsFile) bmpFileName(value string) string {
-  return fileName(value, &bf.HeaderBmp)
+  return fileName(value, bf.HeaderBmp)
 }
 
 
@@ -125,7 +125,7 @@ type Command struct {
 	Type CommandType
 	Necessity CommandNecessity
 	BoundaryValue interface{} // Intなら0と100,-10とnilとか。Stringなら*とか(多分不要)。Pathなら許容する拡張子.oog、.wav
-	//Check func(string) *[]string // 引数の値に対してチェックをしてエラーメッセージ(string)のスライスを返す関数
+	//Check func(string) []string // 引数の値に対してチェックをしてエラーメッセージ(string)のスライスを返す関数
 }
 func (c Command) isInRange(value string) (bool, error) {
 	switch c.Type {
@@ -134,8 +134,8 @@ func (c Command) isInRange(value string) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		if bv, ok := c.BoundaryValue.(*[]int); ok && len(*bv) >= 2 {
-			if intValue >= (*bv)[0] && intValue <= (*bv)[1] {
+		if bv, ok := c.BoundaryValue.([]int); ok && len(bv) >= 2 {
+			if intValue >= bv[0] && intValue <= bv[1] {
 				return true, nil
 			} else {
 				return false, nil
@@ -148,8 +148,8 @@ func (c Command) isInRange(value string) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		if bv, ok := c.BoundaryValue.(*[]float64); ok && len(*bv) >= 2 {
-			if floatValue >= (*bv)[0] && floatValue <= (*bv)[1] {
+		if bv, ok := c.BoundaryValue.([]float64); ok && len(bv) >= 2 {
+			if floatValue >= bv[0] && floatValue <= bv[1] {
 				return true, nil
 			} else {
 				return false, nil
@@ -161,8 +161,8 @@ func (c Command) isInRange(value string) (bool, error) {
 		if c.BoundaryValue == nil {
 			return true, nil
 		}
-		if bv, ok := c.BoundaryValue.(*[]string); ok && len(*bv) >= 1 {
-			if regexp.MustCompile((*bv)[0]).MatchString(value) { // 条件複数個にする？単数にする？
+		if bv, ok := c.BoundaryValue.([]string); ok && len(bv) >= 1 {
+			if regexp.MustCompile(bv[0]).MatchString(value) { // 条件複数個にする？単数にする？
 				return true, nil
 			}
 		} else {
@@ -170,8 +170,8 @@ func (c Command) isInRange(value string) (bool, error) {
 		}
 		return false, nil
 	case Path:
-		if bv, ok := c.BoundaryValue.(*[]string); ok && len(*bv) >= 1 {
-			for _, ext := range *bv {
+		if bv, ok := c.BoundaryValue.([]string); ok && len(bv) >= 1 {
+			for _, ext := range bv {
 				if strings.ToLower(filepath.Ext(value)) == ext {
 					return true, nil
 				}
@@ -190,35 +190,35 @@ var MOVIE_EXTS = []string{".mpg", ".mpeg", ".wmv", ".avi", ".mp4", ".webm", ".m4
 var BMP_EXTS = append(IMAGE_EXTS, MOVIE_EXTS...)
 
 var COMMANDS = []Command{
-	Command{"player", Int, Necessary, &[]int{1, 4}},
+	Command{"player", Int, Necessary, []int{1, 4}},
 	Command{"genre", String, Semi_necessary, nil},
 	Command{"title", String, Necessary, nil},
 	Command{"artist", String, Semi_necessary, nil},
 	Command{"subtitle", String, Unnecessary, nil},
 	Command{"subartist", String, Unnecessary, nil},
-	Command{"bpm", Float, Necessary, &[]float64{0, math.MaxFloat64}},
-	Command{"playlevel", Int, Semi_necessary, &[]int{0, math.MaxInt64}},
-	Command{"rank", Int, Semi_necessary, &[]int{0, 4}},
-	Command{"defexrank", Float, Unnecessary, &[]float64{0, math.MaxFloat64}},
-	Command{"total", Float, Semi_necessary, &[]float64{0, math.MaxFloat64}},
-	Command{"difficulty", Int, Semi_necessary, &[]int{1, 5}},
-	Command{"stagefile", Path, Unnecessary, &IMAGE_EXTS},
-	Command{"banner", Path, Unnecessary, &IMAGE_EXTS},
-	Command{"backbmp", Path, Unnecessary, &IMAGE_EXTS},
-	Command{"preview", Path, Unnecessary, &SOUND_EXTS},
-	Command{"lntype", Int, Unnecessary, &[]int{1, 2}},
-	Command{"lnobj", String, Unnecessary, &[]string{`^[0-9a-zA-Z]{2}$`}},
-	Command{"lnmode", Int, Unnecessary, &[]int{1, 3}},
-	Command{"volwav", Int, Unnecessary, &[]int{0, math.MaxInt64}},
+	Command{"bpm", Float, Necessary, []float64{0, math.MaxFloat64}},
+	Command{"playlevel", Int, Semi_necessary, []int{0, math.MaxInt64}},
+	Command{"rank", Int, Semi_necessary, []int{0, 4}},
+	Command{"defexrank", Float, Unnecessary, []float64{0, math.MaxFloat64}},
+	Command{"total", Float, Semi_necessary, []float64{0, math.MaxFloat64}},
+	Command{"difficulty", Int, Semi_necessary, []int{1, 5}},
+	Command{"stagefile", Path, Unnecessary, IMAGE_EXTS},
+	Command{"banner", Path, Unnecessary, IMAGE_EXTS},
+	Command{"backbmp", Path, Unnecessary, IMAGE_EXTS},
+	Command{"preview", Path, Unnecessary, SOUND_EXTS},
+	Command{"lntype", Int, Unnecessary, []int{1, 2}},
+	Command{"lnobj", String, Unnecessary, []string{`^[0-9a-zA-Z]{2}$`}},
+	Command{"lnmode", Int, Unnecessary, []int{1, 3}},
+	Command{"volwav", Int, Unnecessary, []int{0, math.MaxInt64}},
 	Command{"comment", String, Unnecessary, nil},
 }
 
 var NUMBERING_COMMANDS = []Command{
-	Command{"wav", Path, Necessary, &SOUND_EXTS},
-	Command{"bmp", Path, Unnecessary, &BMP_EXTS},
-	Command{"bpm", Float, Unnecessary, &[]float64{0, math.MaxFloat64}},
-	Command{"stop", Float, Unnecessary, &[]float64{0, math.MaxFloat64}},
-	Command{"scroll", Float, Unnecessary, &[]float64{math.SmallestNonzeroFloat64, math.MaxFloat64}},
+	Command{"wav", Path, Necessary, SOUND_EXTS},
+	Command{"bmp", Path, Unnecessary, BMP_EXTS},
+	Command{"bpm", Float, Unnecessary, []float64{0, math.MaxFloat64}},
+	Command{"stop", Float, Unnecessary, []float64{0, math.MaxFloat64}},
+	Command{"scroll", Float, Unnecessary, []float64{math.SmallestNonzeroFloat64, math.MaxFloat64}},
 }
 
 var BMP_CHANNNELS = []string{"04", "06", "07"}
@@ -240,8 +240,8 @@ var LN_CHANNNELS = []string{
 	"51", "52", "53", "54", "55", "56", "57", "58", "59",
 	"61", "62", "63", "64", "65", "66", "67", "68", "69",
 }
-func matchChannel(ch string, channels *[]string) bool {
-	for _, c := range *channels {
+func matchChannel(ch string, channels []string) bool {
+	for _, c := range channels {
 		if ch == c {
 			return true
 		}
@@ -281,7 +281,7 @@ func (bo bmsObj) time() float64 {
 func (bo bmsObj) value36() string {
 	return strconv.FormatInt(int64(bo.Value), 36)
 }
-func (bf BmsFile) bmsObjs() (*[]bmsObj, *[]bmsObj) {
+func (bf BmsFile) bmsObjs() ([]bmsObj, []bmsObj) {
 	wavObjs := []bmsObj{}
 	bmpObjs := []bmsObj{}
 	ongoingLNs := map[int]bool{}
@@ -297,11 +297,11 @@ func (bf BmsFile) bmsObjs() (*[]bmsObj, *[]bmsObj) {
 			}
 			pos := fraction{i, len(def.Value)/2}
 			obj := bmsObj{Channel: channel, Measure: measure, Position: pos, Value: int(val)}
-			if matchChannel(channel, &WAV_CHANNNELS) {
+			if matchChannel(channel, WAV_CHANNNELS) {
 				if valStr == bf.Header["lnobj"] {
 					obj.IsLNEnd = true
 					ongoingLNs[chint+40] = false
-				}	else if matchChannel(channel, &LN_CHANNNELS) {
+				} else if matchChannel(channel, LN_CHANNNELS) {
 					if ongoingLNs[chint] {
 						obj.IsLNEnd = true
 						ongoingLNs[chint] = false
@@ -310,18 +310,18 @@ func (bf BmsFile) bmsObjs() (*[]bmsObj, *[]bmsObj) {
 					}
 				}
 				wavObjs = append(wavObjs, obj)
-			} else if matchChannel(channel, &BMP_CHANNNELS) {
+			} else if matchChannel(channel, BMP_CHANNNELS) {
 				bmpObjs = append(bmpObjs, obj)
 			}
 		}
 	}
-	sortObjs := func(objs *[]bmsObj) {
-		sort.Slice(*objs, func(i, j int) bool { return (*objs)[i].Value < (*objs)[j].Value })
-		sort.SliceStable(*objs, func(i, j int) bool { return (*objs)[i].time() < (*objs)[j].time() })
+	sortObjs := func(objs []bmsObj) {
+		sort.Slice(objs, func(i, j int) bool { return objs[i].Value < objs[j].Value })
+		sort.SliceStable(objs, func(i, j int) bool { return objs[i].time() < objs[j].time() })
 	}
-	sortObjs(&wavObjs)
-	sortObjs(&bmpObjs)
-	return &wavObjs, &bmpObjs
+	sortObjs(wavObjs)
+	sortObjs(bmpObjs)
+	return wavObjs, bmpObjs
 }
 
 type note struct {
@@ -334,42 +334,42 @@ type patternMoment struct {
 	Objs []note
 }
 type patternIterator struct {
-	patterns *[]definition
-	targetChannels *[]string
+	patterns []definition
+	targetChannels []string
 	index int
 	measure int
 	position *fraction
-	sameMeasureLanes *[]definition
+	sameMeasureLanes []definition
 	laneIndexs []int
 }
-func newPattenIterator(patterns *[]definition, targetChannels *[]string) patternIterator {
+func newPattenIterator(patterns []definition, targetChannels []string) patternIterator {
 	pi := patternIterator{}
 	pi.patterns = patterns
 	pi.targetChannels = targetChannels
 	return pi
 }
-func (pi *patternIterator) next() (moment *patternMoment, logs *[]string) {
-	logs = &[]string{}
+func (pi *patternIterator) next() (moment *patternMoment, logs []string) {
+	logs = []string{}
 	for moment == nil {
 		if pi.sameMeasureLanes == nil {
-			pi.sameMeasureLanes = &[]definition{}
-			for len(*pi.sameMeasureLanes) == 0 {
-				if pi.index >= len(*pi.patterns) {
+			pi.sameMeasureLanes = []definition{}
+			for len(pi.sameMeasureLanes) == 0 {
+				if pi.index >= len(pi.patterns) {
 					return nil, logs
 				}
 				var beforeMeasure int
-				for initIndex := pi.index; pi.index < len(*pi.patterns); pi.index++ {
-					def := (*pi.patterns)[pi.index]
+				for initIndex := pi.index; pi.index < len(pi.patterns); pi.index++ {
+					def := pi.patterns[pi.index]
 					pi.measure, _ = strconv.Atoi(def.Command[:3])
 					if pi.index == initIndex {
 						beforeMeasure = pi.measure
 					}
 					if pi.measure < beforeMeasure { // TODO #IFを考慮
-						*logs = append(*logs, fmt.Sprintf("WARNING: Measure order is not ascending: prev=%d next=%d", beforeMeasure, pi.measure))
+						logs = append(logs, fmt.Sprintf("WARNING: Measure order is not ascending: prev=%d next=%d", beforeMeasure, pi.measure))
 					}
 					if pi.measure == beforeMeasure {
 						if def.Value != "00" && (pi.targetChannels == nil || matchChannel(def.Command[3:5], pi.targetChannels)) {
-							*pi.sameMeasureLanes = append(*pi.sameMeasureLanes, def)
+							pi.sameMeasureLanes = append(pi.sameMeasureLanes, def)
 						}
 					}
 					if pi.measure != beforeMeasure {
@@ -382,7 +382,7 @@ func (pi *patternIterator) next() (moment *patternMoment, logs *[]string) {
 		}
 
 		if pi.laneIndexs == nil {
-			pi.laneIndexs = make([]int, len(*pi.sameMeasureLanes))
+			pi.laneIndexs = make([]int, len(pi.sameMeasureLanes))
 		}
 		if pi.position == nil {
 			pi.position = &fraction{0, 1}
@@ -390,7 +390,7 @@ func (pi *patternIterator) next() (moment *patternMoment, logs *[]string) {
 		sameTimingNotes := []note{}
 		for len(sameTimingNotes) == 0 && pi.position.value() < 1.0 {
 			minNextObjPos := fraction{1, 1}
-			for i, lane := range *pi.sameMeasureLanes {
+			for i, lane := range pi.sameMeasureLanes {
 				objPos := fraction{pi.laneIndexs[i], len(lane.Value) / 2}
 				if objPos.value() >= 1.0 {
 					continue
@@ -845,9 +845,9 @@ func checkBmsFile(bmsFile *BmsFile) {
 	}
 
 	// Check defined bmp/wav is used
-	checkDefinedObjIsUsed := func(commandName string, definitions *[]definition, channels *[]string, ignoreObj string) {
+	checkDefinedObjIsUsed := func(commandName string, definitions []definition, channels []string, ignoreObj string) {
 		usedObjs := map[string]bool{}
-		for _, def := range *definitions {
+		for _, def := range definitions {
 			usedObjs[def.Command[3:5]] = false
 		}
 		undefinedObjs := []string{}
@@ -873,21 +873,21 @@ func checkBmsFile(bmsFile *BmsFile) {
 				}
 			}
 		}
-		for _, def := range *definitions {
+		for _, def := range definitions {
 			if !usedObjs[def.Command[3:5]] {
 				bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: Defined %s object is not used: %s(%s)",
 					commandName, strings.ToUpper(def.Command[3:5]), def.Value))
 			}
 		}
 	}
-	checkDefinedObjIsUsed("BMP", &bmsFile.HeaderBmp, &BMP_CHANNNELS, "")
-	checkDefinedObjIsUsed("WAV", &bmsFile.HeaderWav, &WAV_CHANNNELS, strings.ToLower(bmsFile.Header["lnobj"]))
+	checkDefinedObjIsUsed("BMP", bmsFile.HeaderBmp, BMP_CHANNNELS, "")
+	checkDefinedObjIsUsed("WAV", bmsFile.HeaderWav, WAV_CHANNNELS, strings.ToLower(bmsFile.Header["lnobj"]))
 
 	// Check WAV duplicate
-	pi := newPattenIterator(&bmsFile.Pattern, &WAV_CHANNNELS)
+	pi := newPattenIterator(bmsFile.Pattern, WAV_CHANNNELS)
 	for moment, logs := pi.next(); moment != nil; moment, logs = pi.next() {
-		if logs != nil && len(*logs) > 0 { // TODO 小節番号に関するログは事前にまとめて出しておく？
-			bmsFile.Logs = append(bmsFile.Logs, *logs...)
+		if logs != nil && len(logs) > 0 { // TODO 小節番号に関するログは事前にまとめて出しておく？
+			bmsFile.Logs = append(bmsFile.Logs, logs...)
 		}
 		duplicates := []string{}
 		objCounts := map[string]int{}
@@ -917,7 +917,7 @@ func checkBmsFile(bmsFile *BmsFile) {
 		Value string
 	}
 	ongoingLNs := map[string]*LNstart{}
-	pi = newPattenIterator(&bmsFile.Pattern, &NOTE_CHANNNELS)
+	pi = newPattenIterator(bmsFile.Pattern, NOTE_CHANNNELS)
 	for moment, _ := pi.next(); moment != nil; moment, _ = pi.next() {
 		for _, obj := range moment.Objs {
 			chint, _ := strconv.Atoi(obj.Channel)
@@ -975,7 +975,7 @@ func checkBmsDirectory(bmsDir *Directory) {
 		}
 		return relativePath
 	}
-	containsInNonBmsFiles := func(path string, exts *[]string) bool {
+	containsInNonBmsFiles := func(path string, exts []string) bool {
 		contains := false // 拡張子補完の対称ファイルを全てUsedにする
 		definedFilePath := filepath.Clean(path)
 		for i := range bmsDir.NonBmsFiles {
@@ -1011,13 +1011,13 @@ func checkBmsDirectory(bmsDir *Directory) {
 		}
 
 		if val, ok := bmsFile.Header["preview"]; ok && val != "" {
-			if !containsInNonBmsFiles(val, &SOUND_EXTS) {
+			if !containsInNonBmsFiles(val, SOUND_EXTS) {
 				logs = append(logs, noFileLog("WARNING", bmsFile.Path, "preview", val))
 			}
 		}
 
-		checkDefinedFileExists := func(defs *[]definition, exts *[]string) {
-			for _, def := range *defs {
+		checkDefinedFileExists := func(defs []definition, exts []string) {
+			for _, def := range defs {
 				if def.Value != "" {
 					if !containsInNonBmsFiles(def.Value, exts) {
 						logs = append(logs, noFileLog("ERROR", bmsFile.Path, def.Command, def.Value))
@@ -1025,13 +1025,13 @@ func checkBmsDirectory(bmsDir *Directory) {
 				}
 			}
 		}
-		checkDefinedFileExists(&bmsFile.HeaderWav, &SOUND_EXTS)
+		checkDefinedFileExists(bmsFile.HeaderWav, SOUND_EXTS)
 		//checkDefinedFileExists(&bmsFile.HeaderBmp, &MOVIE_EXTS)
 		for _, def := range bmsFile.HeaderBmp {
 			if def.Value != "" {
-				exts := &IMAGE_EXTS
-				if hasExts(def.Value, &MOVIE_EXTS) {
-					exts = &MOVIE_EXTS
+				exts := IMAGE_EXTS
+				if hasExts(def.Value, MOVIE_EXTS) {
+					exts = MOVIE_EXTS
 				}
 				if !containsInNonBmsFiles(def.Value, exts) {
 					logs = append(logs, noFileLog("ERROR", bmsFile.Path, def.Command, def.Value))
@@ -1071,7 +1071,7 @@ func checkBmsDirectory(bmsDir *Directory) {
 	}
 	ignoreExts := []string{".txt", ".zip", ".rar", ".lzh", ".7z"}
 	for _, nonBmsFile := range bmsDir.NonBmsFiles {
-		if !nonBmsFile.Used && !hasExts(nonBmsFile.Path, &ignoreExts) && !isPreview(nonBmsFile.Path) {
+		if !nonBmsFile.Used && !hasExts(nonBmsFile.Path, ignoreExts) && !isPreview(nonBmsFile.Path) {
 			logs = append(logs, "NOTICE: This file is not used: " + relativePathFromBmsRoot(nonBmsFile.Path))
 		}
 	}
@@ -1105,21 +1105,21 @@ func checkBmsDirectory(bmsDir *Directory) {
 	for i := 0; i < len(bmsDir.BmsFiles); i++ {
 		for j := i+1; j < len(bmsDir.BmsFiles); j++ {
 			diffDefs := func(label string, iBmsFile, jBmsFile *BmsFile) {
-				var iDefs, jDefs *[]definition
+				var iDefs, jDefs []definition
 				switch label {
 				case "WAV":
-					iDefs, jDefs = &iBmsFile.HeaderWav, &jBmsFile.HeaderWav
+					iDefs, jDefs = iBmsFile.HeaderWav, jBmsFile.HeaderWav
 				case "BMP":
-					iDefs, jDefs = &iBmsFile.HeaderBmp, &jBmsFile.HeaderBmp
+					iDefs, jDefs = iBmsFile.HeaderBmp, jBmsFile.HeaderBmp
 				}
 				iDefStrs, jDefStrs := []string{}, []string{}
-				for _, def := range *iDefs {
+				for _, def := range iDefs {
 					iDefStrs = append(iDefStrs, fmt.Sprintf("#%s %s", strings.ToUpper(def.Command), def.Value))
 				}
-				for _, def := range *jDefs {
+				for _, def := range jDefs {
 					jDefStrs = append(jDefStrs, fmt.Sprintf("#%s %s", strings.ToUpper(def.Command), def.Value))
 				}
-				ed, ses := diff.Onp(&iDefStrs, &jDefStrs)
+				ed, ses := diff.Onp(iDefStrs, jDefStrs)
 				if ed > 0 {
 					logs = append(logs, fmt.Sprintf("WARNING: There are %d differences in %s definitions: %s %s",
 						ed, label, iBmsFile.Path, jBmsFile.Path))
@@ -1143,7 +1143,7 @@ func checkBmsDirectory(bmsDir *Directory) {
 			diffDefs("BMP", &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j])
 
 			diffObjs := func(label string, iBmsFile, jBmsFile *BmsFile) {
-				toString := func(bo bmsObj, defs *[]definition) string {
+				toString := func(bo bmsObj, defs []definition) string {
 					val := bo.value36()
 					if len(val) == 1 {
 						val = "0" + val
@@ -1152,19 +1152,19 @@ func checkBmsDirectory(bmsDir *Directory) {
 						bo.Measure, bo.Channel, bo.Position.Numerator, bo.Position.Denominator, label, strings.ToUpper(val), fileName(val, defs))
 				}
 				_logs := []string{}
-				var iObjs, jObjs *[]bmsObj
-				var iDefs, jDefs *[]definition
+				var iObjs, jObjs []bmsObj
+				var iDefs, jDefs []definition
 				switch label {
 				case "WAV":
 					iObjs, jObjs = iBmsFile.BmsWavObjs, jBmsFile.BmsWavObjs
-					iDefs, jDefs = &iBmsFile.HeaderWav, &jBmsFile.HeaderWav
+					iDefs, jDefs = iBmsFile.HeaderWav, jBmsFile.HeaderWav
 				case "BMP":
 					iObjs, jObjs = iBmsFile.BmsBmpObjs, jBmsFile.BmsBmpObjs
-					iDefs, jDefs = &iBmsFile.HeaderBmp, &jBmsFile.HeaderBmp
+					iDefs, jDefs = iBmsFile.HeaderBmp, jBmsFile.HeaderBmp
 				}
 				ii, jj := 0, 0
-				for ; ii < len(*iObjs) && jj < len(*jObjs); {
-					iObj, jObj := (*iObjs)[ii], (*jObjs)[jj]
+				for ; ii < len(iObjs) && jj < len(jObjs); {
+					iObj, jObj := iObjs[ii], jObjs[jj]
 					if iObj.IsLNEnd {
 						ii++
 						continue
@@ -1188,14 +1188,14 @@ func checkBmsDirectory(bmsDir *Directory) {
 						jj++
 					}
 				}
-				for ; ii < len(*iObjs)-1; ii++ {
-					iObj := (*iObjs)[ii]
+				for ; ii < len(iObjs)-1; ii++ {
+					iObj := iObjs[ii]
 					if !iObj.IsLNEnd && fileName(iObj.value36(), iDefs) != "" {
 						_logs = append(_logs, missingLog(jBmsFile.Path, toString(iObj, iDefs)))
 					}
 				}
-				for ; jj < len(*jObjs)-1; jj++ {
-					jObj := (*jObjs)[jj]
+				for ; jj < len(jObjs)-1; jj++ {
+					jObj := jObjs[jj]
 					if !jObj.IsLNEnd && fileName(jObj.value36(), jDefs) != "" {
 						_logs = append(_logs, missingLog(iBmsFile.Path, toString(jObj, jDefs)))
 					}
@@ -1224,8 +1224,8 @@ func checkBmsDirectory(bmsDir *Directory) {
 	}
 }
 
-func hasExts(path string, exts *[]string) bool {
-	for _, ext := range *exts {
+func hasExts(path string, exts []string) bool {
+	for _, ext := range exts {
 		if strings.ToLower(ext) == strings.ToLower(filepath.Ext(path)) {
 			return true
 		}
@@ -1235,7 +1235,7 @@ func hasExts(path string, exts *[]string) bool {
 
 func isBmsPath(path string) bool {
 	bmsExts := []string{".bms", ".bme", ".bml", ".pms", ".bmson"}
-	return hasExts(path, &bmsExts)
+	return hasExts(path, bmsExts)
 }
 
 func containsMultibyteRune(text string) bool {

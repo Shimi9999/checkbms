@@ -31,20 +31,20 @@ import (
   println("LCS:", lcs)
 }*/
 
-func Onp(strsM, strsN *[]string) (int, string) {
+func Onp(strsM, strsN []string) (int, string) {
   isReverse := false
-  if len(*strsM) > len(*strsN) {
+  if len(strsM) > len(strsN) {
     tmp := strsM
     strsM = strsN
     strsN = tmp
     isReverse = true
   }
-  m, n := len(*strsM), len(*strsN)
+  m, n := len(strsM), len(strsN)
   delta := n - m
 
   snake := func(k, y int) int {
     x := y - k
-    for x < m && y < n && (*strsM)[x] == (*strsN)[y] {
+    for x < m && y < n && strsM[x] == strsN[y] {
       x++
       y++
     }
