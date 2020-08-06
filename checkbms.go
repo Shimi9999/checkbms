@@ -350,10 +350,10 @@ func newPattenIterator(patterns *[]definition, targetChannels *[]string) pattern
 }
 func (pi *patternIterator) next() (moment *patternMoment, logs *[]string) {
 	logs = &[]string{}
-	for ; moment == nil; {
+	for moment == nil {
 		if pi.sameMeasureLanes == nil {
 			pi.sameMeasureLanes = &[]definition{}
-			for ; len(*pi.sameMeasureLanes) == 0; {
+			for len(*pi.sameMeasureLanes) == 0 {
 				if pi.index >= len(*pi.patterns) {
 					return nil, logs
 				}
@@ -388,7 +388,7 @@ func (pi *patternIterator) next() (moment *patternMoment, logs *[]string) {
 			pi.position = &fraction{0, 1}
 		}
 		sameTimingNotes := []note{}
-		for ; len(sameTimingNotes) == 0 && pi.position.value() < 1.0; {
+		for len(sameTimingNotes) == 0 && pi.position.value() < 1.0 {
 			minNextObjPos := fraction{1, 1}
 			for i, lane := range *pi.sameMeasureLanes {
 				objPos := fraction{pi.laneIndexs[i], len(lane.Value) / 2}
@@ -614,7 +614,7 @@ func loadBmsFile(path string) (*BmsFile, error) {
 
 					replace := func(defs *[]definition) {
 						isDuplicate := false
-						for i, _ := range *defs {
+						for i := range *defs {
 							if (*defs)[i].Command == lineCommand {
 								bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: #%s is duplicate: old=%s new=%s",
 									strings.ToUpper(lineCommand), (*defs)[i].Value, data))
@@ -978,7 +978,7 @@ func checkBmsDirectory(bmsDir *Directory) {
 	containsInNonBmsFiles := func(path string, exts *[]string) bool {
 		contains := false // 拡張子補完の対称ファイルを全てUsedにする
 		definedFilePath := filepath.Clean(path)
-		for i, _ := range bmsDir.NonBmsFiles {
+		for i := range bmsDir.NonBmsFiles {
 			realFilePath := relativePathFromBmsRoot(bmsDir.NonBmsFiles[i].Path)
 			if definedFilePath == realFilePath {
 				bmsDir.NonBmsFiles[i].Used = true
