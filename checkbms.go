@@ -254,6 +254,9 @@ type fraction struct {
 	Denominator int
 }
 func (f fraction) value() float64 {
+	if f.Denominator == 0 {
+		return -1.0
+	}
 	return float64(f.Numerator) / float64(f.Denominator)
 }
 func (f *fraction) reduce() {
@@ -338,7 +341,7 @@ type patternIterator struct {
 	targetChannels []string
 	index int
 	measure int
-	position *fraction
+	position fraction
 	sameMeasureLanes []definition
 	laneIndexs []int
 }
@@ -384,8 +387,8 @@ func (pi *patternIterator) next() (moment *patternMoment, logs []string) {
 		if pi.laneIndexs == nil {
 			pi.laneIndexs = make([]int, len(pi.sameMeasureLanes))
 		}
-		if pi.position == nil {
-			pi.position = &fraction{0, 1}
+		if pi.position.value() < 0 {
+			pi.position = fraction{0, 1}
 		}
 		sameTimingNotes := []note{}
 		for len(sameTimingNotes) == 0 && pi.position.value() < 1.0 {
@@ -416,12 +419,12 @@ func (pi *patternIterator) next() (moment *patternMoment, logs []string) {
 				}
 			}
 			if len(sameTimingNotes) > 0 {
-				moment = &patternMoment{Measure: pi.measure, Position: *pi.position, Objs: sameTimingNotes}
+				moment = &patternMoment{Measure: pi.measure, Position: pi.position, Objs: sameTimingNotes}
 			}
-			*pi.position = minNextObjPos
+			pi.position = minNextObjPos
 		}
 		if pi.position.value() >= 1.0 {
-			pi.position = nil
+			pi.position = fraction{}
 			pi.sameMeasureLanes = nil
 			pi.laneIndexs = nil
 		}
