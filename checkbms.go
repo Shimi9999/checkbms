@@ -1095,7 +1095,7 @@ func checkBmsDirectory(bmsDir *Directory) {
 		}
 	}
 	for _, file := range bmsDir.NonBmsFiles {
-		if (file.Used || filepath.Ext(file.Path) == ".txt" || isPreview(file.Path)) &&
+		if (file.Used || strings.ToLower(filepath.Ext(file.Path)) == ".txt" || isPreview(file.Path)) &&
 		containsMultibyteRune(relativePathFromBmsRoot(file.Path)) {
 			filenameLog(file.Path)
 		}
