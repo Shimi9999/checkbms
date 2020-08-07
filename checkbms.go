@@ -285,6 +285,22 @@ func (bo bmsObj) time() float64 {
 func (bo bmsObj) value36() string {
 	return strconv.FormatInt(int64(bo.Value), 36)
 }
+func (bo bmsObj) string(headerDef []definition) string {
+	val := bo.value36()
+	if len(val) == 1 {
+		val = "0" + val
+	}
+	label := "WAV"
+	if matchChannel(bo.Channel, BMP_CHANNNELS) {
+		label = "BMP"
+	}
+	filename := ""
+	if headerDef != nil {
+		filename = fmt.Sprintf(" (%s)", fileName(val, headerDef))
+	}
+	return fmt.Sprintf("#%03d %s (%d/%d) #%s%s%s",
+		bo.Measure, bo.Channel, bo.Position.Numerator, bo.Position.Denominator, label, strings.ToUpper(val), filename)
+}
 func (bf BmsFile) bmsObjs() ([]bmsObj, []bmsObj) {
 	wavObjs := []bmsObj{}
 	bmpObjs := []bmsObj{}
@@ -848,6 +864,14 @@ func checkBmsFile(bmsFile *BmsFile) {
 		bmsFile.Logs = append(bmsFile.Logs, "ERROR: TotalNotes is 0")
 	}
 
+	// Check wavObj exists in 0th measure
+	for _, obj := range bmsFile.BmsWavObjs {
+		if obj.Measure != 0 {
+			break
+		}
+		bmsFile.Logs = append(bmsFile.Logs, "WARNING: WAV object exists in 0th measure: " + obj.string(bmsFile.HeaderWav))
+	}
+
 	// Check defined bmp/wav is used
 	checkDefinedObjIsUsed := func(commandName string, definitions []definition, channels []string, ignoreObj string) {
 		usedObjs := map[string]bool{}
@@ -1156,14 +1180,6 @@ func checkBmsDirectory(bmsDir *Directory) {
 			diffDefs("BMP", &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j])
 
 			diffObjs := func(label string, iBmsFile, jBmsFile *BmsFile) {
-				toString := func(bo bmsObj, defs []definition) string {
-					val := bo.value36()
-					if len(val) == 1 {
-						val = "0" + val
-					}
-					return fmt.Sprintf("#%03d %s (%d/%d) #%s%s (%s)",
-						bo.Measure, bo.Channel, bo.Position.Numerator, bo.Position.Denominator, label, strings.ToUpper(val), fileName(val, defs))
-				}
 				_logs := []string{}
 				var iObjs, jObjs []bmsObj
 				var iDefs, jDefs []definition
@@ -1191,12 +1207,12 @@ func checkBmsDirectory(bmsDir *Directory) {
 						jj++
 					} else if iObj.time() < jObj.time() || (iObj.time() == jObj.time() && iObj.Value < jObj.Value) {
 						if fileName(iObj.value36(), iDefs) != "" {
-							_logs = append(_logs, missingLog(jBmsFile.Path, toString(iObj, iDefs)))
+							_logs = append(_logs, missingLog(jBmsFile.Path, iObj.string(iDefs)))
 						}
 						ii++
 					} else {
 						if fileName(jObj.value36(), jDefs) != "" {
-							_logs = append(_logs, missingLog(iBmsFile.Path, toString(jObj, jDefs)))
+							_logs = append(_logs, missingLog(iBmsFile.Path, jObj.string(jDefs)))
 						}
 						jj++
 					}
@@ -1204,13 +1220,13 @@ func checkBmsDirectory(bmsDir *Directory) {
 				for ; ii < len(iObjs)-1; ii++ {
 					iObj := iObjs[ii]
 					if !iObj.IsLNEnd && fileName(iObj.value36(), iDefs) != "" {
-						_logs = append(_logs, missingLog(jBmsFile.Path, toString(iObj, iDefs)))
+						_logs = append(_logs, missingLog(jBmsFile.Path, iObj.string(iDefs)))
 					}
 				}
 				for ; jj < len(jObjs)-1; jj++ {
 					jObj := jObjs[jj]
 					if !jObj.IsLNEnd && fileName(jObj.value36(), jDefs) != "" {
-						_logs = append(_logs, missingLog(iBmsFile.Path, toString(jObj, jDefs)))
+						_logs = append(_logs, missingLog(iBmsFile.Path, jObj.string(jDefs)))
 					}
 				}
 				if len(_logs) > 0 {
