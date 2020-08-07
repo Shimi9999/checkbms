@@ -345,11 +345,11 @@ type patternIterator struct {
 	sameMeasureLanes []definition
 	laneIndexs []int
 }
-func newPattenIterator(patterns []definition, targetChannels []string) patternIterator {
+func newPattenIterator(patterns []definition, targetChannels []string) *patternIterator {
 	pi := patternIterator{}
 	pi.patterns = patterns
 	pi.targetChannels = targetChannels
-	return pi
+	return &pi
 }
 func (pi *patternIterator) next() (moment *patternMoment, logs []string) {
 	logs = []string{}
