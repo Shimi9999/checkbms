@@ -21,6 +21,7 @@ import (
 	"github.com/saintfish/chardet"
 
 	"./diff"
+	"./audio"
 )
 
 type File struct {
@@ -184,7 +185,7 @@ func (c Command) isInRange(value string) (bool, error) {
 	return false, nil
 }
 
-var SOUND_EXTS = []string{".wav", ".ogg", ".flac", ".mp3"}
+var AUDIO_EXTS = []string{".wav", ".ogg", ".flac", ".mp3"}
 var IMAGE_EXTS = []string{".bmp", ".png", ".jpg", ".jpeg", ".gif"}
 var MOVIE_EXTS = []string{".mpg", ".mpeg", ".wmv", ".avi", ".mp4", ".webm", ".m4v", ".m1v", ".m2v"}
 var BMP_EXTS = append(IMAGE_EXTS, MOVIE_EXTS...)
@@ -205,7 +206,7 @@ var COMMANDS = []Command{
 	Command{"stagefile", Path, Unnecessary, IMAGE_EXTS},
 	Command{"banner", Path, Unnecessary, IMAGE_EXTS},
 	Command{"backbmp", Path, Unnecessary, IMAGE_EXTS},
-	Command{"preview", Path, Unnecessary, SOUND_EXTS},
+	Command{"preview", Path, Unnecessary, AUDIO_EXTS},
 	Command{"lntype", Int, Unnecessary, []int{1, 2}},
 	Command{"lnobj", String, Unnecessary, []string{`^[0-9a-zA-Z]{2}$`}},
 	Command{"lnmode", Int, Unnecessary, []int{1, 3}},
@@ -214,7 +215,7 @@ var COMMANDS = []Command{
 }
 
 var NUMBERING_COMMANDS = []Command{
-	Command{"wav", Path, Necessary, SOUND_EXTS},
+	Command{"wav", Path, Necessary, AUDIO_EXTS},
 	Command{"bmp", Path, Unnecessary, BMP_EXTS},
 	Command{"bpm", Float, Unnecessary, []float64{0, math.MaxFloat64}},
 	Command{"stop", Float, Unnecessary, []float64{0, math.MaxFloat64}},
@@ -1014,7 +1015,7 @@ func checkBmsDirectory(bmsDir *Directory) {
 		}
 
 		if val, ok := bmsFile.Header["preview"]; ok && val != "" {
-			if !containsInNonBmsFiles(val, SOUND_EXTS) {
+			if !containsInNonBmsFiles(val, AUDIO_EXTS) {
 				logs = append(logs, noFileLog("WARNING", bmsFile.Path, "preview", val))
 			}
 		}
@@ -1028,7 +1029,7 @@ func checkBmsDirectory(bmsDir *Directory) {
 				}
 			}
 		}
-		checkDefinedFileExists(bmsFile.HeaderWav, SOUND_EXTS)
+		checkDefinedFileExists(bmsFile.HeaderWav, AUDIO_EXTS)
 		//checkDefinedFileExists(&bmsFile.HeaderBmp, &MOVIE_EXTS)
 		for _, def := range bmsFile.HeaderBmp {
 			if def.Value != "" {
@@ -1065,7 +1066,7 @@ func checkBmsDirectory(bmsDir *Directory) {
 	}
 
 	isPreview := func(path string) bool {
-		for _, ext := range SOUND_EXTS {
+		for _, ext := range AUDIO_EXTS {
 			if regexp.MustCompile(`^preview.*` + ext + `$`).MatchString(relativePathFromBmsRoot(path)) {
 				return true
 			}
@@ -1097,6 +1098,15 @@ func checkBmsDirectory(bmsDir *Directory) {
 		if (file.Used || filepath.Ext(file.Path) == ".txt" || isPreview(file.Path)) &&
 		containsMultibyteRune(relativePathFromBmsRoot(file.Path)) {
 			filenameLog(file.Path)
+		}
+	}
+
+	// check over 1 minute audio file (must do after used check)
+	for _, file := range bmsDir.NonBmsFiles {
+		if file.Used && hasExts(file.Path, AUDIO_EXTS) {
+			if d, _ := audio.Duration(file.Path); d >= 60.0 {
+				logs = append(logs, fmt.Sprintf("WARNING: This audio file is over 1 minute(%.1fs): %s", d, file.Path))
+			}
 		}
 	}
 
