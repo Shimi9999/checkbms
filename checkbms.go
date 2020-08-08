@@ -869,7 +869,9 @@ func checkBmsFile(bmsFile *BmsFile) {
 		if obj.Measure != 0 {
 			break
 		}
-		bmsFile.Logs = append(bmsFile.Logs, "WARNING: WAV object exists in 0th measure: " + obj.string(bmsFile.HeaderWav))
+		if matchChannel(obj.Channel, NOTE_CHANNNELS) {
+			bmsFile.Logs = append(bmsFile.Logs, "WARNING: Note exists in 0th measure: " + obj.string(bmsFile.HeaderWav))
+		}
 	}
 
 	// Check defined bmp/wav is used
