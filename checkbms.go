@@ -450,6 +450,7 @@ func (pi *patternIterator) next() (moment *patternMoment, logs []string) {
 }
 
 func main() {
+	doDiffCheck := flag.Bool("diff", false, "check difference flag")
 	flag.Parse()
 
 	if len(flag.Args()) >= 2 {
@@ -471,10 +472,13 @@ func main() {
 	path = filepath.Clean(path)
 
 	if fInfo.IsDir() {
-		err := scanDirectory(path)
+		bmsDirs, err := scanDirectory(path)
 		if err != nil {
 			fmt.Println("Error: scanDirectory error:", err.Error())
 			os.Exit(1)
+		}
+		for _, dir := range bmsDirs {
+			checkBmsDirectory(&dir, *doDiffCheck)
 		}
 	} else if isBmsPath(path) {
 		bmsFile, err := loadBmsFile(path)
@@ -489,9 +493,10 @@ func main() {
 	}
 }
 
-func scanDirectory(path string) error {
+func scanDirectory(path string) ([]Directory, error) {
 	files, _ := ioutil.ReadDir(path)
 
+	bmsDirs := []Directory{}
 	hasBmsFile := false
 	for _, f := range files {
 		if isBmsPath(f.Name()) {
@@ -500,22 +505,24 @@ func scanDirectory(path string) error {
 		}
 	}
 	if hasBmsFile {
-		_, err := scanBmsDirectory(path, true)
+		bmsDir, err := scanBmsDirectory(path, true)
 		if err != nil {
-			return err
+			return nil, err
 		}
+		bmsDirs = append(bmsDirs, *bmsDir)
 	} else {
 		for _, f := range files {
 			if f.IsDir() {
-				err := scanDirectory(filepath.Join(path, f.Name()))
+				_bmsDirs, err := scanDirectory(filepath.Join(path, f.Name()))
 				if err != nil {
-					return err
+					return nil, err
 				}
+				bmsDirs = append(bmsDirs, _bmsDirs...)
 			}
 		}
 	}
 
-	return nil
+	return bmsDirs, nil
 }
 
 func scanBmsDirectory(path string, isRootDir bool) (*Directory, error) {
@@ -548,9 +555,6 @@ func scanBmsDirectory(path string, isRootDir bool) (*Directory, error) {
 		} else {
 			dir.NonBmsFiles = append(dir.NonBmsFiles, *newNonBmsFile(filePath))
 		}
-	}
-	if isRootDir {
-		checkBmsDirectory(dir)
 	}
 
 	return dir, nil
@@ -991,7 +995,7 @@ func checkBmsFile(bmsFile *BmsFile) {
 	}
 }
 
-func checkBmsDirectory(bmsDir *Directory) {
+func checkBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 	var logs []string
 
 	withoutExtPath := func(path string) string {
@@ -1138,107 +1142,109 @@ func checkBmsDirectory(bmsDir *Directory) {
 
 	// diff
 	// TODO ファイルごとの比較ではなく、定義・配置ごとの比較にする？
-	missingLog := func(path, val string) string {
-		return fmt.Sprintf(" Missing(%s): %s", path, val)
-	}
-	for i := 0; i < len(bmsDir.BmsFiles); i++ {
-		for j := i+1; j < len(bmsDir.BmsFiles); j++ {
-			diffDefs := func(label string, iBmsFile, jBmsFile *BmsFile) {
-				var iDefs, jDefs []definition
-				switch label {
-				case "WAV":
-					iDefs, jDefs = iBmsFile.HeaderWav, jBmsFile.HeaderWav
-				case "BMP":
-					iDefs, jDefs = iBmsFile.HeaderBmp, jBmsFile.HeaderBmp
+	if doDiffCheck {
+		missingLog := func(path, val string) string {
+			return fmt.Sprintf(" Missing(%s): %s", path, val)
+		}
+		for i := 0; i < len(bmsDir.BmsFiles); i++ {
+			for j := i+1; j < len(bmsDir.BmsFiles); j++ {
+				diffDefs := func(label string, iBmsFile, jBmsFile *BmsFile) {
+					var iDefs, jDefs []definition
+					switch label {
+					case "WAV":
+						iDefs, jDefs = iBmsFile.HeaderWav, jBmsFile.HeaderWav
+					case "BMP":
+						iDefs, jDefs = iBmsFile.HeaderBmp, jBmsFile.HeaderBmp
+					}
+					iDefStrs, jDefStrs := []string{}, []string{}
+					for _, def := range iDefs {
+						iDefStrs = append(iDefStrs, fmt.Sprintf("#%s %s", strings.ToUpper(def.Command), def.Value))
+					}
+					for _, def := range jDefs {
+						jDefStrs = append(jDefStrs, fmt.Sprintf("#%s %s", strings.ToUpper(def.Command), def.Value))
+					}
+					ed, ses := diff.Onp(iDefStrs, jDefStrs)
+					if ed > 0 {
+						logs = append(logs, fmt.Sprintf("WARNING: There are %d differences in %s definitions: %s %s",
+							ed, label, iBmsFile.Path, jBmsFile.Path))
+						ii, jj := 0, 0
+					  for _, r := range ses {
+					    switch r {
+					    case '=':
+					      ii++
+					      jj++
+					    case '+':
+								logs = append(logs, missingLog(iBmsFile.Path, jDefStrs[jj]))
+					      jj++
+					    case '-':
+								logs = append(logs, missingLog(jBmsFile.Path, iDefStrs[ii]))
+					      ii++
+					    }
+					  }
+					}
 				}
-				iDefStrs, jDefStrs := []string{}, []string{}
-				for _, def := range iDefs {
-					iDefStrs = append(iDefStrs, fmt.Sprintf("#%s %s", strings.ToUpper(def.Command), def.Value))
-				}
-				for _, def := range jDefs {
-					jDefStrs = append(jDefStrs, fmt.Sprintf("#%s %s", strings.ToUpper(def.Command), def.Value))
-				}
-				ed, ses := diff.Onp(iDefStrs, jDefStrs)
-				if ed > 0 {
-					logs = append(logs, fmt.Sprintf("WARNING: There are %d differences in %s definitions: %s %s",
-						ed, label, iBmsFile.Path, jBmsFile.Path))
-					ii, jj := 0, 0
-				  for _, r := range ses {
-				    switch r {
-				    case '=':
-				      ii++
-				      jj++
-				    case '+':
-							logs = append(logs, missingLog(iBmsFile.Path, jDefStrs[jj]))
-				      jj++
-				    case '-':
-							logs = append(logs, missingLog(jBmsFile.Path, iDefStrs[ii]))
-				      ii++
-				    }
-				  }
-				}
-			}
-			diffDefs("WAV", &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j])
-			diffDefs("BMP", &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j])
+				diffDefs("WAV", &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j])
+				diffDefs("BMP", &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j])
 
-			diffObjs := func(label string, iBmsFile, jBmsFile *BmsFile) {
-				_logs := []string{}
-				var iObjs, jObjs []bmsObj
-				var iDefs, jDefs []definition
-				switch label {
-				case "WAV":
-					iObjs, jObjs = iBmsFile.BmsWavObjs, jBmsFile.BmsWavObjs
-					iDefs, jDefs = iBmsFile.HeaderWav, jBmsFile.HeaderWav
-				case "BMP":
-					iObjs, jObjs = iBmsFile.BmsBmpObjs, jBmsFile.BmsBmpObjs
-					iDefs, jDefs = iBmsFile.HeaderBmp, jBmsFile.HeaderBmp
-				}
-				ii, jj := 0, 0
-				for ; ii < len(iObjs) && jj < len(jObjs); {
-					iObj, jObj := iObjs[ii], jObjs[jj]
-					if iObj.IsLNEnd {
-						ii++
-						continue
+				diffObjs := func(label string, iBmsFile, jBmsFile *BmsFile) {
+					_logs := []string{}
+					var iObjs, jObjs []bmsObj
+					var iDefs, jDefs []definition
+					switch label {
+					case "WAV":
+						iObjs, jObjs = iBmsFile.BmsWavObjs, jBmsFile.BmsWavObjs
+						iDefs, jDefs = iBmsFile.HeaderWav, jBmsFile.HeaderWav
+					case "BMP":
+						iObjs, jObjs = iBmsFile.BmsBmpObjs, jBmsFile.BmsBmpObjs
+						iDefs, jDefs = iBmsFile.HeaderBmp, jBmsFile.HeaderBmp
 					}
-					if jObj.IsLNEnd {
-						jj++
-						continue
+					ii, jj := 0, 0
+					for ; ii < len(iObjs) && jj < len(jObjs); {
+						iObj, jObj := iObjs[ii], jObjs[jj]
+						if iObj.IsLNEnd {
+							ii++
+							continue
+						}
+						if jObj.IsLNEnd {
+							jj++
+							continue
+						}
+						if iObj.time() == jObj.time() && iObj.Value == jObj.Value {
+							ii++
+							jj++
+						} else if iObj.time() < jObj.time() || (iObj.time() == jObj.time() && iObj.Value < jObj.Value) {
+							if fileName(iObj.value36(), iDefs) != "" {
+								_logs = append(_logs, missingLog(jBmsFile.Path, iObj.string(iDefs)))
+							}
+							ii++
+						} else {
+							if fileName(jObj.value36(), jDefs) != "" {
+								_logs = append(_logs, missingLog(iBmsFile.Path, jObj.string(jDefs)))
+							}
+							jj++
+						}
 					}
-					if iObj.time() == jObj.time() && iObj.Value == jObj.Value {
-						ii++
-						jj++
-					} else if iObj.time() < jObj.time() || (iObj.time() == jObj.time() && iObj.Value < jObj.Value) {
-						if fileName(iObj.value36(), iDefs) != "" {
+					for ; ii < len(iObjs)-1; ii++ {
+						iObj := iObjs[ii]
+						if !iObj.IsLNEnd && fileName(iObj.value36(), iDefs) != "" {
 							_logs = append(_logs, missingLog(jBmsFile.Path, iObj.string(iDefs)))
 						}
-						ii++
-					} else {
-						if fileName(jObj.value36(), jDefs) != "" {
+					}
+					for ; jj < len(jObjs)-1; jj++ {
+						jObj := jObjs[jj]
+						if !jObj.IsLNEnd && fileName(jObj.value36(), jDefs) != "" {
 							_logs = append(_logs, missingLog(iBmsFile.Path, jObj.string(jDefs)))
 						}
-						jj++
+					}
+					if len(_logs) > 0 {
+						s := fmt.Sprintf("WARNING: There are %d differences in %s objects: %s, %s",
+							len(_logs), label, iBmsFile.Path, jBmsFile.Path)
+						logs = append(append(logs, s), _logs...)
 					}
 				}
-				for ; ii < len(iObjs)-1; ii++ {
-					iObj := iObjs[ii]
-					if !iObj.IsLNEnd && fileName(iObj.value36(), iDefs) != "" {
-						_logs = append(_logs, missingLog(jBmsFile.Path, iObj.string(iDefs)))
-					}
-				}
-				for ; jj < len(jObjs)-1; jj++ {
-					jObj := jObjs[jj]
-					if !jObj.IsLNEnd && fileName(jObj.value36(), jDefs) != "" {
-						_logs = append(_logs, missingLog(iBmsFile.Path, jObj.string(jDefs)))
-					}
-				}
-				if len(_logs) > 0 {
-					s := fmt.Sprintf("WARNING: There are %d differences in %s objects: %s, %s",
-						len(_logs), label, iBmsFile.Path, jBmsFile.Path)
-					logs = append(append(logs, s), _logs...)
-				}
+				diffObjs("WAV", &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j])
+				diffObjs("BMP", &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j])
 			}
-			diffObjs("WAV", &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j])
-			diffObjs("BMP", &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j])
 		}
 	}
 
