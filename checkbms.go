@@ -832,7 +832,7 @@ func checkBmsFile(bmsFile *BmsFile) {
 	// Check invalid value of Numbering commands
 	numberingCommandDefs := append(append(bmsFile.HeaderWav, bmsFile.HeaderBmp...), bmsFile.HeaderNumbering...)
 	defined := make([]bool, len(NUMBERING_COMMANDS))
-	var hasNoWavExtDef definition
+	hasNoWavExtDefs := []definition{}
 	for _, def := range numberingCommandDefs {
 		for i, nc := range NUMBERING_COMMANDS {
 			if strings.HasPrefix(def.Command, nc.Name) {
@@ -844,8 +844,8 @@ func checkBmsFile(bmsFile *BmsFile) {
 						bmsFile.Logs = append(bmsFile.Logs, "DEBUG ERROR: isInRange return error: " + def.Value)
 					}
 					bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("ERROR: #%s has invalid value: %s", strings.ToUpper(def.Command), def.Value))
-				} else if strings.HasPrefix(def.Command, "wav") && filepath.Ext(def.Value) != ".wav" && hasNoWavExtDef.Command == "" {
-					hasNoWavExtDef = def
+				} else if strings.HasPrefix(def.Command, "wav") && filepath.Ext(def.Value) != ".wav" {
+					hasNoWavExtDefs = append(hasNoWavExtDefs, def)
 				}
 			}
 		}
@@ -859,9 +859,9 @@ func checkBmsFile(bmsFile *BmsFile) {
 			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("%s: #%sxx definition is missing", alertLevel, strings.ToUpper(NUMBERING_COMMANDS[i].Name)))
 		}
 	}
-	if hasNoWavExtDef.Command != "" {
-		bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("NOTICE: #%s has file not .wav extension: %s",
-			strings.ToUpper(hasNoWavExtDef.Command), hasNoWavExtDef.Value)) // TODO 複数の場合はその旨も出力する？
+	if len(hasNoWavExtDefs) > 0 {
+		bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("NOTICE: #WAV definition has non-.wav extension(*%d): %s %s etc...",
+			len(hasNoWavExtDefs), strings.ToUpper(hasNoWavExtDefs[0].Command), hasNoWavExtDefs[0].Value))
 	}
 
 	if bmsFile.TotalNotes == 0 {
