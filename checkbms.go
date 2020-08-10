@@ -321,13 +321,14 @@ func (bo bmsObj) time() float64 {
 	return float64(bo.Measure) + bo.Position.value()
 }
 func (bo bmsObj) value36() string {
-	return strconv.FormatInt(int64(bo.Value), 36)
-}
-func (bo bmsObj) string(headerDef []definition) string {
-	val := bo.value36()
+	val := strconv.FormatInt(int64(bo.Value), 36)
 	if len(val) == 1 {
 		val = "0" + val
 	}
+	return val
+}
+func (bo bmsObj) string(headerDef []definition) string {
+	val := bo.value36()
 	label := "WAV"
 	if matchChannel(bo.Channel, BMP_CHANNNELS) {
 		label = "BMP"
@@ -1278,13 +1279,13 @@ func checkBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 							jj++
 						}
 					}
-					for ; ii < len(iObjs)-1; ii++ {
+					for ; ii < len(iObjs); ii++ {
 						iObj := iObjs[ii]
 						if !iObj.IsLNEnd && fileName(iObj.value36(), iDefs) != "" {
 							logs = append(logs, missingLog(jBmsFile.Path, iObj.string(iDefs)))
 						}
 					}
-					for ; jj < len(jObjs)-1; jj++ {
+					for ; jj < len(jObjs); jj++ {
 						jObj := jObjs[jj]
 						if !jObj.IsLNEnd && fileName(jObj.value36(), jDefs) != "" {
 							logs = append(logs, missingLog(iBmsFile.Path, jObj.string(jDefs)))
