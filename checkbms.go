@@ -36,6 +36,7 @@ type Directory struct {
 	OtherFiles []NonBmsFile*/
 	NonBmsFiles []NonBmsFile
 	Directories []Directory
+	Logs Logs
 }
 func newDirectory(path string) *Directory {
 	var d Directory
@@ -43,6 +44,7 @@ func newDirectory(path string) *Directory {
 	d.BmsFiles = make([]BmsFile, 0)
 	d.NonBmsFiles = make([]NonBmsFile, 0)
 	d.Directories = make([]Directory, 0)
+	d.Logs = make([]Log, 0)
 	return &d
 }
 
@@ -61,7 +63,7 @@ type BmsFile struct {
 	BmsBmpObjs []bmsObj
 	Keymode int // 5, 7, 9, 10, 14, 24, 48
 	TotalNotes int
-	Logs []string
+	Logs Logs
 }
 func newBmsFile(path string) *BmsFile {
 	var bf BmsFile
@@ -71,7 +73,7 @@ func newBmsFile(path string) *BmsFile {
 	bf.HeaderBmp = make([]definition, 0)
 	bf.HeaderNumbering = make([]definition, 0)
 	bf.Pattern = make([]definition, 0)
-	bf.Logs = make([]string, 0)
+	bf.Logs = make([]Log, 0)
 	return &bf
 }
 func (bf BmsFile) calculateDefaultTotal() float64 {
@@ -105,6 +107,42 @@ func newNonBmsFile(path string) *NonBmsFile {
 	var nbf NonBmsFile
 	nbf.Path = path
 	return &nbf
+}
+
+type AlertLevel string
+const (
+	Error = AlertLevel("ERROR")
+	Warning = AlertLevel("WARNING")
+	Notice = AlertLevel("NOTICE")
+	Debug = AlertLevel("DEBUG ERROR")
+)
+type Log struct {
+	Level AlertLevel
+	Message string
+	SubLogs []string
+}
+func newLog(level AlertLevel, message string) *Log {
+	var log Log
+	log.Level = level
+	log.Message = message
+	log.SubLogs = []string{}
+	return &log
+}
+func (log Log) print() {
+	fmt.Println(string(log.Level) + ": " + log.Message)
+	for _, subLog := range log.SubLogs {
+		fmt.Println("  " + subLog)
+	}
+}
+
+type Logs []Log
+func (logs *Logs) addNewLog(level AlertLevel, message string) {
+	*logs = append(*logs, *newLog(level, message))
+}
+func (logs Logs) print() {
+	for _, log := range logs {
+		log.print()
+	}
 }
 
 type CommandType int
@@ -368,8 +406,8 @@ func newPattenIterator(patterns []definition, targetChannels []string) *patternI
 	pi.targetChannels = targetChannels
 	return &pi
 }
-func (pi *patternIterator) next() (moment *patternMoment, logs []string) {
-	logs = []string{}
+func (pi *patternIterator) next() (moment *patternMoment, logs Logs) {
+	logs = Logs{}
 	for moment == nil {
 		if pi.sameMeasureLanes == nil {
 			pi.sameMeasureLanes = []definition{}
@@ -385,7 +423,7 @@ func (pi *patternIterator) next() (moment *patternMoment, logs []string) {
 						beforeMeasure = pi.measure
 					}
 					if pi.measure < beforeMeasure { // TODO #IFを考慮
-						logs = append(logs, fmt.Sprintf("WARNING: Measure order is not ascending: prev=%d next=%d", beforeMeasure, pi.measure))
+						logs.addNewLog(Warning, fmt.Sprintf("Measure order is not ascending: prev=%d next=%d", beforeMeasure, pi.measure))
 					}
 					if pi.measure == beforeMeasure {
 						if def.Value != "00" && (pi.targetChannels == nil || matchChannel(def.Command[3:5], pi.targetChannels)) {
@@ -479,6 +517,24 @@ func main() {
 		}
 		for _, dir := range bmsDirs {
 			checkBmsDirectory(&dir, *doDiffCheck)
+
+			for _, bmsFile := range dir.BmsFiles {
+				if len(bmsFile.Logs) > 0 {
+					fmt.Printf("# BmsFile checklog: %s\n", bmsFile.Path)
+					bmsFile.Logs.print()
+					fmt.Println("")
+				}
+			}
+			if len(dir.Logs) > 0 {
+				dirPath := filepath.Clean(dir.Path)
+				if dirPath == "." {
+					dirPath, _ = filepath.Abs(dirPath)
+					dirPath = filepath.Base(dirPath)
+				}
+				fmt.Printf("## BmsDirectory checklog: %s\n", dirPath)
+				dir.Logs.print()
+				fmt.Println("")
+			}
 		}
 	} else if isBmsPath(path) {
 		bmsFile, err := loadBmsFile(path)
@@ -487,6 +543,11 @@ func main() {
 			os.Exit(1)
 		}
 		checkBmsFile(bmsFile)
+		if len(bmsFile.Logs) > 0 {
+			fmt.Printf("# BmsFile checklog: %s\n", bmsFile.Path)
+			bmsFile.Logs.print()
+			fmt.Println("")
+		}
 	} else {
 		fmt.Println("Error: Entered path is not bms file or directory")
 		os.Exit(1)
@@ -615,7 +676,7 @@ func loadBmsFile(path string) (*BmsFile, error) {
 					}
 					val, ok := bmsFile.Header[command.Name]
 					if ok {
-						bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: #%s is duplicate: old=%s new=%s",
+						bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("#%s is duplicate: old=%s new=%s",
 							strings.ToUpper(command.Name), val, data))
 					}
 					if !ok || (ok && data != "") { // 重複しても空文字だったら値を採用しない
@@ -640,7 +701,7 @@ func loadBmsFile(path string) (*BmsFile, error) {
 						isDuplicate := false
 						for i := range *defs {
 							if (*defs)[i].Command == lineCommand {
-								bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: #%s is duplicate: old=%s new=%s",
+								bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("#%s is duplicate: old=%s new=%s",
 									strings.ToUpper(lineCommand), (*defs)[i].Value, data))
 								if data != "" {
 									(*defs)[i].Value = data
@@ -702,7 +763,7 @@ func loadBmsFile(path string) (*BmsFile, error) {
 		}
 
 		if !correctLine {
-			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("ERROR: Invalid line(%d): %s", lineNumber, line))
+			bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Invalid line(%d): %s", lineNumber, line))
 		}
 	}
 	if scanner.Err() != nil {
@@ -719,9 +780,9 @@ func loadBmsFile(path string) (*BmsFile, error) {
 	}
 	if isUtf8 {
 		if hasMultibyteRune {
-			bmsFile.Logs = append(bmsFile.Logs, "ERROR: Bmsfile charset is UTF-8 and contains multibyte characters")
+			bmsFile.Logs.addNewLog(Error, "Bmsfile charset is UTF-8 and contains multibyte characters")
 		} else {
-			bmsFile.Logs = append(bmsFile.Logs, "WARNING: Bmsfile charset is UTF-8")
+			bmsFile.Logs.addNewLog(Warning, "Bmsfile charset is UTF-8")
 		}
 	}
 
@@ -776,47 +837,47 @@ func checkBmsFile(bmsFile *BmsFile) {
 		val, ok := bmsFile.Header[command.Name]
 		if !ok {
 			if command.Necessity != Unnecessary {
-				alertLevel := "ERROR"
+				alertLevel := Error
 				if command.Necessity == Semi_necessary {
-					alertLevel = "WARNING"
+					alertLevel = Warning
 				}
-				bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("%s: #%s definition is missing", alertLevel, strings.ToUpper(command.Name)))
+				bmsFile.Logs.addNewLog(alertLevel, fmt.Sprintf("#%s definition is missing", strings.ToUpper(command.Name)))
 			}
 		} else if val == "" {
-			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: #%s value is empty", strings.ToUpper(command.Name)))
+			bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("#%s value is empty", strings.ToUpper(command.Name)))
 		} else if isInRange, err := command.isInRange(val); err != nil || !isInRange {
 			if err != nil {
 				fmt.Println("DEBUG ERROR: isInRange return error")
 			}
-			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("ERROR: #%s has invalid value: %s", strings.ToUpper(command.Name), val))
+			bmsFile.Logs.addNewLog(Error, fmt.Sprintf("#%s has invalid value: %s", strings.ToUpper(command.Name), val))
 		} else if command.Name == "rank" { // TODO ここらへんはCommand型のCheck関数的なものに置き換えたい？
 			rank, _ := strconv.Atoi(val)
 			if rank == 0 {
-				bmsFile.Logs = append(bmsFile.Logs, "NOTICE: #RANK is 0(VERY HARD)")
+				bmsFile.Logs.addNewLog(Notice, "#RANK is 0(VERY HARD)")
 			} else if rank == 1 {
-				bmsFile.Logs = append(bmsFile.Logs, "NOTICE: #RANK is 1(HARD)")
+				bmsFile.Logs.addNewLog(Notice, "#RANK is 1(HARD)")
 			} else if rank == 4 {
-				bmsFile.Logs = append(bmsFile.Logs, "NOTICE: #RANK is 4(VERY EASY)")
+				bmsFile.Logs.addNewLog(Notice, "#RANK is 4(VERY EASY)")
 			}
 		} else if command.Name == "total" {
 			total, _ := strconv.ParseFloat(val, 64)
 			if total < 100 {
-				bmsFile.Logs = append(bmsFile.Logs, "WARNING: #TOTAL is under 100: " + val)
+				bmsFile.Logs.addNewLog(Warning, "#TOTAL is under 100: " + val)
 			} else {
 				defaultTotal := bmsFile.calculateDefaultTotal()
 				overRate := 1.6
 				totalPerNotes := total / float64(bmsFile.TotalNotes) // TODO 適切な基準値は？
 				if total > defaultTotal * overRate && totalPerNotes > 0.35 {
-					bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("NOTICE: #TOTAL is too high(TotalNotes=%d): %s", bmsFile.TotalNotes, val))
+					bmsFile.Logs.addNewLog(Notice, fmt.Sprintf("#TOTAL is too high(TotalNotes=%d): %s", bmsFile.TotalNotes, val))
 				} else if total < defaultTotal / overRate && totalPerNotes < 0.2 {
-					bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("NOTICE: #TOTAL is too low(TotalNotes=%d): %s", bmsFile.TotalNotes, val))
+					bmsFile.Logs.addNewLog(Notice, fmt.Sprintf("#TOTAL is too low(TotalNotes=%d): %s", bmsFile.TotalNotes, val))
 				}
 			}
 		} else if command.Name == "defexrank" {
-			bmsFile.Logs = append(bmsFile.Logs, "NOTICE: #DEFEXRANK is defined: " + val)
+			bmsFile.Logs.addNewLog(Notice, "#DEFEXRANK is defined: " + val)
 		} else if command.Name == "lntype" {
 			if val == "2" {
-				bmsFile.Logs = append(bmsFile.Logs, "WARNING: #LNTYPE 2(MGQ) is deprecated")
+				bmsFile.Logs.addNewLog(Warning, "#LNTYPE 2(MGQ) is deprecated")
 			}
 		}
 	}
@@ -825,7 +886,7 @@ func checkBmsFile(bmsFile *BmsFile) {
 	subtitle, ok2 := bmsFile.Header["subtitle"]
 	if ok1 && ok2 && subtitle != "" {
 		if strings.HasSuffix(title, subtitle) {
-			bmsFile.Logs = append(bmsFile.Logs, "WARNING: #TITLE and #SUBTITLE have same text: "+subtitle)
+			bmsFile.Logs.addNewLog(Warning, "#TITLE and #SUBTITLE have same text: " + subtitle)
 		}
 	}
 
@@ -838,12 +899,12 @@ func checkBmsFile(bmsFile *BmsFile) {
 			if strings.HasPrefix(def.Command, nc.Name) {
 				defined[i] = true
 				if def.Value == "" {
-					bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: #%s value is empty", strings.ToUpper(def.Command)))
+					bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("#%s value is empty", strings.ToUpper(def.Command)))
 				} else if isInRange, err := nc.isInRange(def.Value); err != nil || !isInRange {
 					if err != nil {
-						bmsFile.Logs = append(bmsFile.Logs, "DEBUG ERROR: isInRange return error: " + def.Value)
+						bmsFile.Logs.addNewLog(Debug, "isInRange return error: " + def.Value)
 					}
-					bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("ERROR: #%s has invalid value: %s", strings.ToUpper(def.Command), def.Value))
+					bmsFile.Logs.addNewLog(Error, fmt.Sprintf("#%s has invalid value: %s", strings.ToUpper(def.Command), def.Value))
 				} else if strings.HasPrefix(def.Command, "wav") && filepath.Ext(def.Value) != ".wav" {
 					hasNoWavExtDefs = append(hasNoWavExtDefs, def)
 				}
@@ -852,20 +913,20 @@ func checkBmsFile(bmsFile *BmsFile) {
 	}
 	for i, d := range defined {
 		if !d && NUMBERING_COMMANDS[i].Necessity != Unnecessary {
-			alertLevel := "ERROR"
+			alertLevel := Error
 			if NUMBERING_COMMANDS[i].Necessity == Semi_necessary {
-				alertLevel = "WARNING"
+				alertLevel = Warning
 			}
-			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("%s: #%sxx definition is missing", alertLevel, strings.ToUpper(NUMBERING_COMMANDS[i].Name)))
+			bmsFile.Logs.addNewLog(alertLevel, fmt.Sprintf("#%sxx definition is missing", strings.ToUpper(NUMBERING_COMMANDS[i].Name)))
 		}
 	}
 	if len(hasNoWavExtDefs) > 0 {
-		bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("NOTICE: #WAV definition has non-.wav extension(*%d): %s %s etc...",
+		bmsFile.Logs.addNewLog(Notice, fmt.Sprintf("#WAV definition has non-.wav extension(*%d): %s %s etc...",
 			len(hasNoWavExtDefs), strings.ToUpper(hasNoWavExtDefs[0].Command), hasNoWavExtDefs[0].Value))
 	}
 
 	if bmsFile.TotalNotes == 0 {
-		bmsFile.Logs = append(bmsFile.Logs, "ERROR: TotalNotes is 0")
+		bmsFile.Logs.addNewLog(Error, "TotalNotes is 0")
 	}
 
 	// Check wavObj exists in 0th measure
@@ -874,7 +935,7 @@ func checkBmsFile(bmsFile *BmsFile) {
 			break
 		}
 		if matchChannel(obj.Channel, NOTE_CHANNNELS) {
-			bmsFile.Logs = append(bmsFile.Logs, "WARNING: Note exists in 0th measure: " + obj.string(bmsFile.HeaderWav))
+			bmsFile.Logs.addNewLog(Warning, "Note exists in 0th measure: " + obj.string(bmsFile.HeaderWav))
 		}
 	}
 
@@ -902,14 +963,14 @@ func checkBmsFile(bmsFile *BmsFile) {
 		if len(undefinedObjs) > 0 {
 			for _, obj := range removeDuplicate(undefinedObjs) {
 				if obj != ignoreObj {
-					bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: Used %s object is undefined: %s",
+					bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Used %s object is undefined: %s",
 						commandName, strings.ToUpper(obj)))
 				}
 			}
 		}
 		for _, def := range definitions {
 			if !usedObjs[def.Command[3:5]] {
-				bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: Defined %s object is not used: %s(%s)",
+				bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Defined %s object is not used: %s(%s)",
 					commandName, strings.ToUpper(def.Command[3:5]), def.Value))
 			}
 		}
@@ -938,7 +999,7 @@ func checkBmsFile(bmsFile *BmsFile) {
 			fp := fraction{moment.Position.Numerator, moment.Position.Denominator}
 			fp.reduce()
 			for _, dup := range duplicates {
-				bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: Used WAV is duplicate(#%03d,%d/%d): %s (%s) * %d",
+				bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Used WAV is duplicate(#%03d,%d/%d): %s (%s) * %d",
 					moment.Measure, fp.Numerator, fp.Denominator, strings.ToUpper(dup), bmsFile.wavFileName(strings.ToUpper(dup)), objCounts[dup]))
 			}
 		}
@@ -960,7 +1021,7 @@ func checkBmsFile(bmsFile *BmsFile) {
 					ongoingLNs[obj.Channel] = &LNstart{moment.Measure, moment.Position, obj.Value}
 				} else if bmsFile.Header["lnobj"] == "" {
 					if ongoingLNs[obj.Channel].Value != obj.Value {
-						bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("WARNING: LN start and end are not equal: %s(#%d,%d/%d) -> %s(#%d,%d/%d)",
+						bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("LN start and end are not equal: %s(#%d,%d/%d) -> %s(#%d,%d/%d)",
 							strings.ToUpper(ongoingLNs[obj.Channel].Value), ongoingLNs[obj.Channel].Measure, ongoingLNs[obj.Channel].Position.Numerator, ongoingLNs[obj.Channel].Position.Denominator,
 							strings.ToUpper(obj.Value), moment.Measure, moment.Position.Numerator, moment.Position.Denominator))
 					}
@@ -972,7 +1033,7 @@ func checkBmsFile(bmsFile *BmsFile) {
 					if obj.Value == bmsFile.Header["lnobj"] {
 						ongoingLNs[lnCh] = nil
 					} else {
-						bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("ERROR: Normal note is in LN: %s(#%d,%d/%d) in %s(#%d,%d/%d)",
+						bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Normal note is in LN: %s(#%d,%d/%d) in %s(#%d,%d/%d)",
 							strings.ToUpper(obj.Value), moment.Measure, moment.Position.Numerator, moment.Position.Denominator,
 							strings.ToUpper(ongoingLNs[lnCh].Value), ongoingLNs[lnCh].Measure, ongoingLNs[lnCh].Position.Numerator, ongoingLNs[lnCh].Position.Denominator))
 					}
@@ -982,22 +1043,13 @@ func checkBmsFile(bmsFile *BmsFile) {
 	}
 	for _, lnStart := range ongoingLNs { // TODO ソートして表示する？
 		if lnStart != nil {
-			bmsFile.Logs = append(bmsFile.Logs, fmt.Sprintf("ERROR: LN is not finished: %s(#%d,%d/%d)",
+			bmsFile.Logs.addNewLog(Error, fmt.Sprintf("LN is not finished: %s(#%d,%d/%d)",
 				strings.ToUpper(lnStart.Value), lnStart.Measure, lnStart.Position.Numerator, lnStart.Position.Denominator))
-		}
-	}
-
-	if len(bmsFile.Logs) > 0 {
-		fmt.Printf("# BmsFile checklog: %s\n", bmsFile.Path)
-		for _, log := range bmsFile.Logs {
-			fmt.Println(" " + log)
 		}
 	}
 }
 
 func checkBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
-	var logs []string
-
 	withoutExtPath := func(path string) string {
 		return path[:len(path) - len(filepath.Ext(path))]
 	}
@@ -1025,13 +1077,13 @@ func checkBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 		}
 		return contains
 	}
-	noFileLog := func(level, path, command, value string) string {
-		return fmt.Sprintf("%s: Defined file does not exist(%s): #%s %s", level,
-		relativePathFromBmsRoot(path), strings.ToUpper(command), value)
+	noFileMessage := func(path, command, value string) string {
+		return fmt.Sprintf("Defined file does not exist(%s): #%s %s",
+			relativePathFromBmsRoot(path), strings.ToUpper(command), value)
 	}
 
-	for _, bmsFile := range bmsDir.BmsFiles {
-		checkBmsFile(&bmsFile)
+	for i, bmsFile := range bmsDir.BmsFiles {
+		checkBmsFile(&bmsDir.BmsFiles[i])
 
 		// Check defined files existance
 		imageCommands := []string{"stagefile", "banner", "backbmp"}
@@ -1039,14 +1091,14 @@ func checkBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 			val, ok := bmsFile.Header[command]
 			if ok && val != "" {
 				if !containsInNonBmsFiles(val, nil) {
-					logs = append(logs, noFileLog("WARNING", bmsFile.Path, command, val))
+					bmsDir.Logs.addNewLog(Warning, noFileMessage(bmsFile.Path, command, val))
 				}
 			}
 		}
 
 		if val, ok := bmsFile.Header["preview"]; ok && val != "" {
 			if !containsInNonBmsFiles(val, AUDIO_EXTS) {
-				logs = append(logs, noFileLog("WARNING", bmsFile.Path, "preview", val))
+				bmsDir.Logs.addNewLog(Warning, noFileMessage(bmsFile.Path, "preview", val))
 			}
 		}
 
@@ -1054,7 +1106,7 @@ func checkBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 			for _, def := range defs {
 				if def.Value != "" {
 					if !containsInNonBmsFiles(def.Value, exts) {
-						logs = append(logs, noFileLog("ERROR", bmsFile.Path, def.Command, def.Value))
+						bmsDir.Logs.addNewLog(Error, noFileMessage(bmsFile.Path, def.Command, def.Value))
 					}
 				}
 			}
@@ -1068,7 +1120,7 @@ func checkBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 					exts = MOVIE_EXTS
 				}
 				if !containsInNonBmsFiles(def.Value, exts) {
-					logs = append(logs, noFileLog("ERROR", bmsFile.Path, def.Command, def.Value))
+					bmsDir.Logs.addNewLog(Error, noFileMessage(bmsFile.Path, def.Command, def.Value))
 				}
 			}
 		}
@@ -1089,9 +1141,10 @@ func checkBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 		if isNotUnified[index] {
 			strs := []string{}
 			for j, bmsFile := range bmsDir.BmsFiles {
-				strs = append(strs, fmt.Sprintf("  %s: %s", relativePathFromBmsRoot(bmsFile.Path), values[index][j]))
+				strs = append(strs, fmt.Sprintf("%s: %s", relativePathFromBmsRoot(bmsFile.Path), values[index][j]))
 			}
-			logs = append(logs, fmt.Sprintf("WARNING: #%s is not unified: \n%s", strings.ToUpper(uc), strings.Join(strs, "\n")))
+			log := Log{Level: Warning, Message: fmt.Sprintf("#%s is not unified", strings.ToUpper(uc)), SubLogs: strs}
+			bmsDir.Logs = append(bmsDir.Logs, log)
 		}
 	}
 
@@ -1106,18 +1159,18 @@ func checkBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 	ignoreExts := []string{".txt", ".zip", ".rar", ".lzh", ".7z"}
 	for _, nonBmsFile := range bmsDir.NonBmsFiles {
 		if !nonBmsFile.Used && !hasExts(nonBmsFile.Path, ignoreExts) && !isPreview(nonBmsFile.Path) {
-			logs = append(logs, "NOTICE: This file is not used: " + relativePathFromBmsRoot(nonBmsFile.Path))
+			bmsDir.Logs.addNewLog(Notice, "This file is not used: " + relativePathFromBmsRoot(nonBmsFile.Path))
 		}
 	}
 	for _, dir := range bmsDir.Directories {
 		if len(dir.BmsFiles) == 0 && len(dir.NonBmsFiles) == 0 && len(dir.Directories) == 0 {
-			logs = append(logs, "NOTICE: This directory is empty: " + relativePathFromBmsRoot(dir.Path))
+			bmsDir.Logs.addNewLog(Notice, "This directory is empty: " + relativePathFromBmsRoot(dir.Path))
 		}
 	}
 
 	// check filename (must do after used check)
 	filenameLog := func(path string) {
-		logs = append(logs, "ERROR: This filename has environment-dependent characters: " + path)
+		bmsDir.Logs.addNewLog(Error, "This filename has environment-dependent characters: " + path)
 	}
 	for _, file := range bmsDir.BmsFiles {
 		if containsMultibyteRune(relativePathFromBmsRoot(file.Path)) {
@@ -1135,7 +1188,7 @@ func checkBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 	for _, file := range bmsDir.NonBmsFiles {
 		if file.Used && hasExts(file.Path, AUDIO_EXTS) {
 			if d, _ := audio.Duration(file.Path); d >= 60.0 {
-				logs = append(logs, fmt.Sprintf("WARNING: This audio file is over 1 minute(%.1fs): %s", d, file.Path))
+				bmsDir.Logs.addNewLog(Warning, fmt.Sprintf("This audio file is over 1 minute(%.1fs): %s", d, file.Path))
 			}
 		}
 	}
@@ -1144,7 +1197,7 @@ func checkBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 	// TODO ファイルごとの比較ではなく、定義・配置ごとの比較にする？
 	if doDiffCheck {
 		missingLog := func(path, val string) string {
-			return fmt.Sprintf(" Missing(%s): %s", path, val)
+			return fmt.Sprintf("Missing(%s): %s", path, val)
 		}
 		for i := 0; i < len(bmsDir.BmsFiles); i++ {
 			for j := i+1; j < len(bmsDir.BmsFiles); j++ {
@@ -1165,7 +1218,7 @@ func checkBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 					}
 					ed, ses := diff.Onp(iDefStrs, jDefStrs)
 					if ed > 0 {
-						logs = append(logs, fmt.Sprintf("WARNING: There are %d differences in %s definitions: %s %s",
+						log := newLog(Warning, fmt.Sprintf("There are %d differences in %s definitions: %s %s",
 							ed, label, iBmsFile.Path, jBmsFile.Path))
 						ii, jj := 0, 0
 					  for _, r := range ses {
@@ -1174,20 +1227,21 @@ func checkBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 					      ii++
 					      jj++
 					    case '+':
-								logs = append(logs, missingLog(iBmsFile.Path, jDefStrs[jj]))
+								log.SubLogs = append(log.SubLogs, missingLog(iBmsFile.Path, jDefStrs[jj]))
 					      jj++
 					    case '-':
-								logs = append(logs, missingLog(jBmsFile.Path, iDefStrs[ii]))
+								log.SubLogs = append(log.SubLogs, missingLog(jBmsFile.Path, iDefStrs[ii]))
 					      ii++
 					    }
 					  }
+						bmsDir.Logs = append(bmsDir.Logs, *log)
 					}
 				}
 				diffDefs("WAV", &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j])
 				diffDefs("BMP", &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j])
 
 				diffObjs := func(label string, iBmsFile, jBmsFile *BmsFile) {
-					_logs := []string{}
+					logs := []string{}
 					var iObjs, jObjs []bmsObj
 					var iDefs, jDefs []definition
 					switch label {
@@ -1214,12 +1268,12 @@ func checkBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 							jj++
 						} else if iObj.time() < jObj.time() || (iObj.time() == jObj.time() && iObj.Value < jObj.Value) {
 							if fileName(iObj.value36(), iDefs) != "" {
-								_logs = append(_logs, missingLog(jBmsFile.Path, iObj.string(iDefs)))
+								logs = append(logs, missingLog(jBmsFile.Path, iObj.string(iDefs)))
 							}
 							ii++
 						} else {
 							if fileName(jObj.value36(), jDefs) != "" {
-								_logs = append(_logs, missingLog(iBmsFile.Path, jObj.string(jDefs)))
+								logs = append(logs, missingLog(iBmsFile.Path, jObj.string(jDefs)))
 							}
 							jj++
 						}
@@ -1227,36 +1281,24 @@ func checkBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 					for ; ii < len(iObjs)-1; ii++ {
 						iObj := iObjs[ii]
 						if !iObj.IsLNEnd && fileName(iObj.value36(), iDefs) != "" {
-							_logs = append(_logs, missingLog(jBmsFile.Path, iObj.string(iDefs)))
+							logs = append(logs, missingLog(jBmsFile.Path, iObj.string(iDefs)))
 						}
 					}
 					for ; jj < len(jObjs)-1; jj++ {
 						jObj := jObjs[jj]
 						if !jObj.IsLNEnd && fileName(jObj.value36(), jDefs) != "" {
-							_logs = append(_logs, missingLog(iBmsFile.Path, jObj.string(jDefs)))
+							logs = append(logs, missingLog(iBmsFile.Path, jObj.string(jDefs)))
 						}
 					}
-					if len(_logs) > 0 {
-						s := fmt.Sprintf("WARNING: There are %d differences in %s objects: %s, %s",
-							len(_logs), label, iBmsFile.Path, jBmsFile.Path)
-						logs = append(append(logs, s), _logs...)
+					if len(logs) > 0 {
+						log := Log{Level: Warning, Message: fmt.Sprintf("There are %d differences in %s objects: %s, %s",
+								len(logs), label, iBmsFile.Path, jBmsFile.Path), SubLogs: logs}
+						bmsDir.Logs = append(bmsDir.Logs, log)
 					}
 				}
 				diffObjs("WAV", &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j])
 				diffObjs("BMP", &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j])
 			}
-		}
-	}
-
-	if len(logs) > 0 {
-		dirPath := filepath.Clean(bmsDir.Path)
-		if dirPath == "." {
-			dirPath, _ = filepath.Abs(dirPath)
-			dirPath = filepath.Base(dirPath)
-		}
-		fmt.Printf("## BmsDirectory checklog: %s\n", dirPath)
-		for _, log := range logs {
-			fmt.Println(" " + log)
 		}
 	}
 }
