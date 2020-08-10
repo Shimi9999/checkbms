@@ -1,9 +1,8 @@
-package main
+package checkbms
 
 import (
 	"os"
 	"fmt"
-	"flag"
 	"strings"
 	"strconv"
 	"bufio"
@@ -20,8 +19,8 @@ import (
 	"golang.org/x/text/transform"
 	"github.com/saintfish/chardet"
 
-	"./diff"
-	"./audio"
+	"github.com/Shimi9999/checkbms/diff"
+	"github.com/Shimi9999/checkbms/audio"
 )
 
 type File struct {
@@ -128,7 +127,7 @@ func newLog(level AlertLevel, message string) *Log {
 	log.SubLogs = []string{}
 	return &log
 }
-func (log Log) print() {
+func (log Log) Print() {
 	fmt.Println(string(log.Level) + ": " + log.Message)
 	for _, subLog := range log.SubLogs {
 		fmt.Println("  " + subLog)
@@ -139,9 +138,9 @@ type Logs []Log
 func (logs *Logs) addNewLog(level AlertLevel, message string) {
 	*logs = append(*logs, *newLog(level, message))
 }
-func (logs Logs) print() {
+func (logs Logs) Print() {
 	for _, log := range logs {
-		log.print()
+		log.Print()
 	}
 }
 
@@ -488,80 +487,13 @@ func (pi *patternIterator) next() (moment *patternMoment, logs Logs) {
 	return moment, logs
 }
 
-func main() {
-	doDiffCheck := flag.Bool("diff", false, "check difference flag")
-	flag.Parse()
-
-	if len(flag.Args()) >= 2 {
-		fmt.Println("Usage: checkbms [bmspath/dirpath]")
-		os.Exit(1)
-	}
-
-	var path string
-	if len(flag.Args()) == 0 {
-		path = "./"
-	} else {
-		path = flag.Arg(0)
-	}
-	fInfo, err := os.Stat(path)
-	if err != nil {
-		fmt.Println("Error: Path is wrong:", err.Error())
-		os.Exit(1)
-	}
-	path = filepath.Clean(path)
-
-	if fInfo.IsDir() {
-		bmsDirs, err := scanDirectory(path)
-		if err != nil {
-			fmt.Println("Error: scanDirectory error:", err.Error())
-			os.Exit(1)
-		}
-		for _, dir := range bmsDirs {
-			checkBmsDirectory(&dir, *doDiffCheck)
-
-			for _, bmsFile := range dir.BmsFiles {
-				if len(bmsFile.Logs) > 0 {
-					fmt.Printf("# BmsFile checklog: %s\n", bmsFile.Path)
-					bmsFile.Logs.print()
-					fmt.Println("")
-				}
-			}
-			if len(dir.Logs) > 0 {
-				dirPath := filepath.Clean(dir.Path)
-				if dirPath == "." {
-					dirPath, _ = filepath.Abs(dirPath)
-					dirPath = filepath.Base(dirPath)
-				}
-				fmt.Printf("## BmsDirectory checklog: %s\n", dirPath)
-				dir.Logs.print()
-				fmt.Println("")
-			}
-		}
-	} else if isBmsPath(path) {
-		bmsFile, err := loadBmsFile(path)
-		if err != nil {
-			fmt.Println("Error: loadBms error:", err.Error())
-			os.Exit(1)
-		}
-		checkBmsFile(bmsFile)
-		if len(bmsFile.Logs) > 0 {
-			fmt.Printf("# BmsFile checklog: %s\n", bmsFile.Path)
-			bmsFile.Logs.print()
-			fmt.Println("")
-		}
-	} else {
-		fmt.Println("Error: Entered path is not bms file or directory")
-		os.Exit(1)
-	}
-}
-
-func scanDirectory(path string) ([]Directory, error) {
+func ScanDirectory(path string) ([]Directory, error) {
 	files, _ := ioutil.ReadDir(path)
 
 	bmsDirs := []Directory{}
 	hasBmsFile := false
 	for _, f := range files {
-		if isBmsPath(f.Name()) {
+		if IsBmsPath(f.Name()) {
 			hasBmsFile = true
 			break
 		}
@@ -575,7 +507,7 @@ func scanDirectory(path string) ([]Directory, error) {
 	} else {
 		for _, f := range files {
 			if f.IsDir() {
-				_bmsDirs, err := scanDirectory(filepath.Join(path, f.Name()))
+				_bmsDirs, err := ScanDirectory(filepath.Join(path, f.Name()))
 				if err != nil {
 					return nil, err
 				}
@@ -593,14 +525,14 @@ func scanBmsDirectory(path string, isRootDir bool) (*Directory, error) {
 
 	for _, f := range files {
 		filePath := filepath.Join(path, f.Name())
-		if isRootDir && isBmsPath(f.Name()) {
+		if isRootDir && IsBmsPath(f.Name()) {
 			var bmsfile *BmsFile
 			if filepath.Ext(filePath) == ".bmson" {
 				bmsfile = newBmsFile(filePath) // TODO 仮 loadBmson作る
 				//bmsfile, err := LoadBmson(bmspath)
 			} else {
 				var err error
-				bmsfile, err = loadBmsFile(filePath)
+				bmsfile, err = ScanBmsFile(filePath)
 				if err != nil {
 					return nil, err
 				}
@@ -622,7 +554,7 @@ func scanBmsDirectory(path string, isRootDir bool) (*Directory, error) {
 	return dir, nil
 }
 
-func loadBmsFile(path string) (*BmsFile, error) {
+func ScanBmsFile(path string) (*BmsFile, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("BMSfile open error: " + err.Error())
@@ -833,7 +765,7 @@ func loadBmsFile(path string) (*BmsFile, error) {
 	return bmsFile, nil
 }
 
-func checkBmsFile(bmsFile *BmsFile) {
+func CheckBmsFile(bmsFile *BmsFile) {
 	for _, command := range COMMANDS {
 		val, ok := bmsFile.Header[command.Name]
 		if !ok {
@@ -1050,7 +982,7 @@ func checkBmsFile(bmsFile *BmsFile) {
 	}
 }
 
-func checkBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
+func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 	withoutExtPath := func(path string) string {
 		return path[:len(path) - len(filepath.Ext(path))]
 	}
@@ -1084,7 +1016,7 @@ func checkBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 	}
 
 	for i, bmsFile := range bmsDir.BmsFiles {
-		checkBmsFile(&bmsDir.BmsFiles[i])
+		CheckBmsFile(&bmsDir.BmsFiles[i])
 
 		// Check defined files existance
 		imageCommands := []string{"stagefile", "banner", "backbmp"}
@@ -1313,7 +1245,7 @@ func hasExts(path string, exts []string) bool {
 	return false
 }
 
-func isBmsPath(path string) bool {
+func IsBmsPath(path string) bool {
 	bmsExts := []string{".bms", ".bme", ".bml", ".pms", ".bmson"}
 	return hasExts(path, bmsExts)
 }
