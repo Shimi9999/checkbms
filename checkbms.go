@@ -97,7 +97,6 @@ func (bf BmsFile) bmpFileName(value string) string {
   return fileName(value, bf.HeaderBmp)
 }
 
-
 type NonBmsFile struct {
 	File
 	Used bool
@@ -110,14 +109,14 @@ func newNonBmsFile(path string) *NonBmsFile {
 
 type CommandType int
 const (
-	Int = iota
+	Int CommandType = iota + 1
 	Float
 	String
 	Path
 )
 type CommandNecessity int
 const (
-	Necessary = iota
+	Necessary CommandNecessity = iota + 1
 	Semi_necessary
 	Unnecessary
 )
@@ -129,6 +128,7 @@ type Command struct {
 	//Check func(string) []string // 引数の値に対してチェックをしてエラーメッセージ(string)のスライスを返す関数
 }
 func (c Command) isInRange(value string) (bool, error) {
+	invalidError := fmt.Errorf("Error isInRange: BoundaryValue is invalid")
 	switch c.Type {
 	case Int:
 		intValue, err := strconv.Atoi(value)
@@ -142,7 +142,7 @@ func (c Command) isInRange(value string) (bool, error) {
 				return false, nil
 			}
 		} else {
-			return false, fmt.Errorf("Error isInRange: BoundaryValue is invalid")
+			return false, invalidError
 		}
 	case Float:
 		floatValue, err := strconv.ParseFloat(value, 64)
@@ -156,7 +156,7 @@ func (c Command) isInRange(value string) (bool, error) {
 				return false, nil
 			}
 		} else {
-			return false, fmt.Errorf("Error isInRange: BoundaryValue is invalid")
+			return false, invalidError
 		}
 	case String:
 		if c.BoundaryValue == nil {
@@ -167,7 +167,7 @@ func (c Command) isInRange(value string) (bool, error) {
 				return true, nil
 			}
 		} else {
-			return false, fmt.Errorf("Error isInRange: BoundaryValue is invalid")
+			return false, invalidError
 		}
 		return false, nil
 	case Path:
@@ -179,7 +179,7 @@ func (c Command) isInRange(value string) (bool, error) {
 			}
 			return false, nil
 		} else {
-			return false, fmt.Errorf("Debug error isInRange: BoundaryValue is invalid")
+			return false, invalidError
 		}
 	}
 	return false, nil
