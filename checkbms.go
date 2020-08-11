@@ -46,6 +46,19 @@ func newDirectory(path string) *Directory {
 	d.Logs = make([]Log, 0)
 	return &d
 }
+func (d Directory) LogString() string {
+	str := ""
+	if len(d.Logs) > 0 {
+		dirPath := filepath.Clean(d.Path)
+		if dirPath == "." {
+			dirPath, _ = filepath.Abs(dirPath)
+			dirPath = filepath.Base(dirPath)
+		}
+		str += fmt.Sprintf("## BmsDirectory checklog: %s\n", dirPath)
+		str += d.Logs.String()
+	}
+	return str
+}
 
 type definition struct {
 	Command string
@@ -97,6 +110,14 @@ func (bf BmsFile) wavFileName(value string) string {
 func (bf BmsFile) bmpFileName(value string) string {
   return fileName(value, bf.HeaderBmp)
 }
+func (bf BmsFile) LogString() string {
+	str := ""
+	if len(bf.Logs) > 0 {
+		str += fmt.Sprintf("# BmsFile checklog: %s\n", bf.Path)
+		str += bf.Logs.String()
+	}
+	return str
+}
 
 type NonBmsFile struct {
 	File
@@ -127,21 +148,27 @@ func newLog(level AlertLevel, message string) *Log {
 	log.SubLogs = []string{}
 	return &log
 }
-func (log Log) Print() {
-	fmt.Println(string(log.Level) + ": " + log.Message)
+func (log Log) String() string {
+	str := string(log.Level) + ": " + log.Message
 	for _, subLog := range log.SubLogs {
-		fmt.Println("  " + subLog)
+		str += "\n  " + subLog
 	}
+	return str
 }
 
 type Logs []Log
 func (logs *Logs) addNewLog(level AlertLevel, message string) {
 	*logs = append(*logs, *newLog(level, message))
 }
-func (logs Logs) Print() {
-	for _, log := range logs {
-		log.Print()
+func (logs Logs) String() string {
+	var str string
+	for i, log := range logs {
+		if i > 0 {
+			str += "\n"
+		}
+		str += log.String()
 	}
+	return str
 }
 
 type CommandType int

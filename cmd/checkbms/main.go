@@ -40,23 +40,18 @@ func main() {
 		for _, dir := range bmsDirs {
 			checkbms.CheckBmsDirectory(&dir, *doDiffCheck)
 
+			var log string
 			for _, bmsFile := range dir.BmsFiles {
-				if len(bmsFile.Logs) > 0 {
-					fmt.Printf("# BmsFile checklog: %s\n", bmsFile.Path)
-					bmsFile.Logs.Print()
-					fmt.Println("")
-				}
-			}
-			if len(dir.Logs) > 0 {
-				dirPath := filepath.Clean(dir.Path)
-				if dirPath == "." {
-					dirPath, _ = filepath.Abs(dirPath)
-					dirPath = filepath.Base(dirPath)
-				}
-				fmt.Printf("## BmsDirectory checklog: %s\n", dirPath)
-				dir.Logs.Print()
-				fmt.Println("")
-			}
+	      if len(bmsFile.Logs) > 0 {
+	        log += bmsFile.LogString()
+	        log += fmt.Sprintf("\n\n")
+	      }
+	    }
+	    if len(dir.Logs) > 0 {
+	      log += dir.LogString()
+	      log += fmt.Sprintf("\n\n")
+	    }
+			fmt.Printf("%s", log)
 		}
 	} else if checkbms.IsBmsPath(path) {
 		bmsFile, err := checkbms.ScanBmsFile(path)
@@ -66,9 +61,7 @@ func main() {
 		}
 		checkbms.CheckBmsFile(bmsFile)
 		if len(bmsFile.Logs) > 0 {
-			fmt.Printf("# BmsFile checklog: %s\n", bmsFile.Path)
-			bmsFile.Logs.Print()
-			fmt.Println("")
+			fmt.Println(bmsFile.LogString())
 		}
 	} else {
 		fmt.Println("Error: Entered path is not bms file or directory")
