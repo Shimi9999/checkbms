@@ -515,23 +515,18 @@ func (pi *patternIterator) next() (moment *patternMoment, logs Logs) {
 }
 
 func ScanDirectory(path string) ([]Directory, error) {
-	files, _ := ioutil.ReadDir(path)
-
 	bmsDirs := []Directory{}
-	hasBmsFile := false
-	for _, f := range files {
-		if IsBmsPath(f.Name()) {
-			hasBmsFile = true
-			break
-		}
-	}
-	if hasBmsFile {
+	if IsBmsDirectory(path) {
 		bmsDir, err := scanBmsDirectory(path, true)
 		if err != nil {
 			return nil, err
 		}
 		bmsDirs = append(bmsDirs, *bmsDir)
 	} else {
+		files, err := ioutil.ReadDir(path)
+		if err != nil {
+			return nil, err
+		}
 		for _, f := range files {
 			if f.IsDir() {
 				_bmsDirs, err := ScanDirectory(filepath.Join(path, f.Name()))
@@ -552,7 +547,7 @@ func scanBmsDirectory(path string, isRootDir bool) (*Directory, error) {
 
 	for _, f := range files {
 		filePath := filepath.Join(path, f.Name())
-		if isRootDir && IsBmsPath(f.Name()) {
+		if isRootDir && IsBmsFile(f.Name()) {
 			var bmsfile *BmsFile
 			if filepath.Ext(filePath) == ".bmson" {
 				bmsfile = newBmsFile(filePath) // TODO 仮 loadBmson作る
@@ -1272,9 +1267,22 @@ func hasExts(path string, exts []string) bool {
 	return false
 }
 
-func IsBmsPath(path string) bool {
+func IsBmsFile(path string) bool {
 	bmsExts := []string{".bms", ".bme", ".bml", ".pms", ".bmson"}
 	return hasExts(path, bmsExts)
+}
+
+func IsBmsDirectory(path string) bool {
+	files, err := ioutil.ReadDir(path)
+	if err != nil {
+		return false
+	}
+	for _, f := range files {
+		if IsBmsFile(f.Name()) {
+			return true
+		}
+	}
+	return false
 }
 
 func containsMultibyteRune(text string) bool {
