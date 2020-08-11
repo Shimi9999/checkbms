@@ -617,7 +617,7 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 		}
 
 		correctLine := false
-		if strings.HasPrefix(line, "*") { // skip comment line
+		if strings.HasPrefix(line, "*") || strings.HasPrefix(line, "%") { // skip comment/meta line
 			correctLine = true
 		}
 		if !correctLine {
