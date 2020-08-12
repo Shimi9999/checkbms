@@ -283,7 +283,7 @@ var NUMBERING_COMMANDS = []Command{
 	Command{"bmp", Path, Unnecessary, BMP_EXTS},
 	Command{"bpm", Float, Unnecessary, []float64{0, math.MaxFloat64}},
 	Command{"stop", Float, Unnecessary, []float64{0, math.MaxFloat64}},
-	Command{"scroll", Float, Unnecessary, []float64{math.SmallestNonzeroFloat64, math.MaxFloat64}},
+	Command{"scroll", Float, Unnecessary, []float64{-math.MaxFloat64, math.MaxFloat64}},
 }
 
 var BMP_CHANNNELS = []string{"04", "06", "07"}
