@@ -924,7 +924,8 @@ func CheckBmsFile(bmsFile *BmsFile) {
 			}
 		}
 		for _, def := range definitions {
-			if !usedObjs[def.Command[3:5]] {
+			if !usedObjs[def.Command[3:5]] &&
+			!(commandName == "BMP" && def.Command[3:5] == "00") { // misslayer
 				bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Defined %s object is not used: %s(%s)",
 					commandName, strings.ToUpper(def.Command[3:5]), def.Value))
 			}
