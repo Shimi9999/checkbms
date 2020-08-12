@@ -1128,14 +1128,15 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 		bmsDir.Logs.addNewLog(Error, "This filename has environment-dependent characters: " + path)
 	}
 	for _, file := range bmsDir.BmsFiles {
-		if containsMultibyteRune(relativePathFromBmsRoot(file.Path)) {
-			filenameLog(file.Path)
+		if rPath := relativePathFromBmsRoot(file.Path); containsMultibyteRune(rPath) {
+			filenameLog(rPath)
 		}
 	}
 	for _, file := range bmsDir.NonBmsFiles {
-		if (file.Used || strings.ToLower(filepath.Ext(file.Path)) == ".txt" || isPreview(file.Path)) &&
-		containsMultibyteRune(relativePathFromBmsRoot(file.Path)) {
-			filenameLog(file.Path)
+		if rPath := relativePathFromBmsRoot(file.Path);
+		(file.Used || strings.ToLower(filepath.Ext(file.Path)) == ".txt" || isPreview(file.Path)) &&
+		containsMultibyteRune(rPath) {
+			filenameLog(rPath)
 		}
 	}
 
