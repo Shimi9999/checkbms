@@ -918,7 +918,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 		if len(undefinedObjs) > 0 {
 			for _, obj := range removeDuplicate(undefinedObjs) {
 				if obj != ignoreObj {
-					bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Used %s object is undefined: %s",
+					bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Placed %s object is undefined: %s",
 						commandName, strings.ToUpper(obj)))
 				}
 			}
@@ -955,7 +955,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 			fp := fraction{moment.Position.Numerator, moment.Position.Denominator}
 			fp.reduce()
 			for _, dup := range duplicates {
-				bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Used WAV is duplicate(#%03d,%d/%d): %s (%s) * %d",
+				bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Placed WAV is duplicate(#%03d,%d/%d): %s (%s) * %d",
 					moment.Measure, fp.Numerator, fp.Denominator, strings.ToUpper(dup), bmsFile.wavFileName(strings.ToUpper(dup)), objCounts[dup]))
 			}
 		}
