@@ -56,7 +56,7 @@ func main() {
 	} else if checkbms.IsBmsFile(path) {
 		bmsFile, err := checkbms.ScanBmsFile(path)
 		if err != nil {
-			fmt.Println("Error: loadBms error:", err.Error())
+			fmt.Println("Error: ScanBms error:", err.Error())
 			os.Exit(1)
 		}
 		checkbms.CheckBmsFile(bmsFile)

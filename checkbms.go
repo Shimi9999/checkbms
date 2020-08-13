@@ -1151,7 +1151,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 	for _, file := range bmsDir.NonBmsFiles {
 		if file.Used && hasExts(file.Path, AUDIO_EXTS) {
 			if d, _ := audio.Duration(file.Path); d >= 60.0 {
-				bmsDir.Logs.addNewLog(Warning, fmt.Sprintf("This audio file is over 1 minute(%.1fs): %s", d, file.Path))
+				bmsDir.Logs.addNewLog(Warning, fmt.Sprintf("This audio file is over 1 minute(%.1fsec): %s", d, relativePathFromBmsRoot(file.Path)))
 			}
 		}
 	}
