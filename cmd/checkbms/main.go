@@ -43,12 +43,12 @@ func main() {
 			var log string
 			for _, bmsFile := range dir.BmsFiles {
 	      if len(bmsFile.Logs) > 0 {
-	        log += bmsFile.LogString()
+	        log += bmsFile.LogString(false)
 	        log += fmt.Sprintf("\n\n")
 	      }
 	    }
 	    if len(dir.Logs) > 0 {
-	      log += dir.LogString()
+	      log += dir.LogString(false)
 	      log += fmt.Sprintf("\n\n")
 	    }
 			fmt.Printf("%s", log)

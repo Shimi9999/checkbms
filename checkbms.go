@@ -46,13 +46,15 @@ func newDirectory(path string) *Directory {
 	d.Logs = make([]Log, 0)
 	return &d
 }
-func (d Directory) LogString() string {
+func (d Directory) LogString(base bool) string {
 	str := ""
 	if len(d.Logs) > 0 {
 		dirPath := filepath.Clean(d.Path)
 		if dirPath == "." {
 			dirPath, _ = filepath.Abs(dirPath)
 			dirPath = filepath.Base(dirPath)
+		} else if base {
+			dirPath = filepath.Base(d.Path)
 		}
 		str += fmt.Sprintf("## BmsDirectory checklog: %s\n", dirPath)
 		str += d.Logs.String()
@@ -110,10 +112,14 @@ func (bf BmsFile) wavFileName(value string) string {
 func (bf BmsFile) bmpFileName(value string) string {
   return fileName(value, bf.HeaderBmp)
 }
-func (bf BmsFile) LogString() string {
+func (bf BmsFile) LogString(base bool) string {
 	str := ""
 	if len(bf.Logs) > 0 {
-		str += fmt.Sprintf("# BmsFile checklog: %s\n", bf.Path)
+		path := bf.Path
+		if base {
+			path = filepath.Base(bf.Path)
+		}
+		str += fmt.Sprintf("# BmsFile checklog: %s\n", path)
 		str += bf.Logs.String()
 	}
 	return str
