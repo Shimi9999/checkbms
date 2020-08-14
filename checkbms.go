@@ -292,8 +292,8 @@ var NUMBERING_COMMANDS = []Command{
 	Command{"scroll", Float, Unnecessary, []float64{-math.MaxFloat64, math.MaxFloat64}},
 }
 
-var BMP_CHANNNELS = []string{"04", "06", "07"}
-var WAV_CHANNNELS = []string{"01",
+var BMP_CHANNELS = []string{"04", "06", "07"}
+var WAV_CHANNELS = []string{"01",
 	"11", "12", "13", "14", "15", "16", "17", "18", "19",
 	"21", "22", "23", "24", "25", "26", "27", "28", "29",
 	"31", "32", "33", "34", "35", "36", "37", "38", "39",
@@ -301,13 +301,13 @@ var WAV_CHANNNELS = []string{"01",
 	"51", "52", "53", "54", "55", "56", "57", "58", "59",
 	"61", "62", "63", "64", "65", "66", "67", "68", "69",
 }
-var NOTE_CHANNNELS = []string{
+var NOTE_CHANNELS = []string{
 	"11", "12", "13", "14", "15", "16", "17", "18", "19",
 	"21", "22", "23", "24", "25", "26", "27", "28", "29",
 	"51", "52", "53", "54", "55", "56", "57", "58", "59",
 	"61", "62", "63", "64", "65", "66", "67", "68", "69",
 }
-var LN_CHANNNELS = []string{
+var LN_CHANNELS = []string{
 	"51", "52", "53", "54", "55", "56", "57", "58", "59",
 	"61", "62", "63", "64", "65", "66", "67", "68", "69",
 }
@@ -362,7 +362,7 @@ func (bo bmsObj) value36() string {
 func (bo bmsObj) string(headerDef []definition) string {
 	val := bo.value36()
 	label := "WAV"
-	if matchChannel(bo.Channel, BMP_CHANNNELS) {
+	if matchChannel(bo.Channel, BMP_CHANNELS) {
 		label = "BMP"
 	}
 	filename := ""
@@ -388,11 +388,11 @@ func (bf BmsFile) bmsObjs() ([]bmsObj, []bmsObj) {
 			}
 			pos := fraction{i, len(def.Value)/2}
 			obj := bmsObj{Channel: channel, Measure: measure, Position: pos, Value: int(val)}
-			if matchChannel(channel, WAV_CHANNNELS) {
+			if matchChannel(channel, WAV_CHANNELS) {
 				if valStr == bf.Header["lnobj"] {
 					obj.IsLNEnd = true
 					ongoingLNs[chint+40] = false
-				} else if matchChannel(channel, LN_CHANNNELS) {
+				} else if matchChannel(channel, LN_CHANNELS) {
 					if ongoingLNs[chint] {
 						obj.IsLNEnd = true
 						ongoingLNs[chint] = false
@@ -401,7 +401,7 @@ func (bf BmsFile) bmsObjs() ([]bmsObj, []bmsObj) {
 					}
 				}
 				wavObjs = append(wavObjs, obj)
-			} else if matchChannel(channel, BMP_CHANNNELS) {
+			} else if matchChannel(channel, BMP_CHANNELS) {
 				bmpObjs = append(bmpObjs, obj)
 			}
 		}
@@ -808,7 +808,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 		if obj.Measure != 0 {
 			break
 		}
-		if matchChannel(obj.Channel, NOTE_CHANNNELS) {
+		if matchChannel(obj.Channel, NOTE_CHANNELS) {
 			bmsFile.Logs.addNewLog(Warning, "Note exists in 0th measure: " + obj.string(bmsFile.HeaderWav))
 		}
 	}
@@ -850,8 +850,8 @@ func CheckBmsFile(bmsFile *BmsFile) {
 			}
 		}
 	}
-	checkDefinedObjIsUsed("BMP", bmsFile.HeaderBmp, BMP_CHANNNELS, "")
-	checkDefinedObjIsUsed("WAV", bmsFile.HeaderWav, WAV_CHANNNELS, strings.ToLower(bmsFile.Header["lnobj"]))
+	checkDefinedObjIsUsed("BMP", bmsFile.HeaderBmp, BMP_CHANNELS, "")
+	checkDefinedObjIsUsed("WAV", bmsFile.HeaderWav, WAV_CHANNELS, strings.ToLower(bmsFile.Header["lnobj"]))
 
 	// Check WAV duplicate
 	boi := newBmsObjsIterator(bmsFile.BmsWavObjs)
@@ -880,7 +880,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 	// Check end of LN exists
 	noteObjs := []bmsObj{}
 	for _, obj := range bmsFile.BmsWavObjs {
-		if matchChannel(obj.Channel, NOTE_CHANNNELS) {
+		if matchChannel(obj.Channel, NOTE_CHANNELS) {
 			noteObjs = append(noteObjs, obj)
 		}
 	}
