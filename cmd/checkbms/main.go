@@ -61,7 +61,7 @@ func main() {
 		}
 		checkbms.CheckBmsFile(bmsFile)
 		if len(bmsFile.Logs) > 0 {
-			fmt.Println(bmsFile.LogString())
+			fmt.Println(bmsFile.LogString(false))
 		}
 	} else {
 		fmt.Println("Error: Entered path is not bms file or directory")
