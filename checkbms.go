@@ -272,7 +272,7 @@ var COMMANDS = []Command{
 	Command{"rank", Int, Semi_necessary, []int{0, 4}},
 	Command{"defexrank", Float, Unnecessary, []float64{0, math.MaxFloat64}},
 	Command{"total", Float, Semi_necessary, []float64{0, math.MaxFloat64}},
-	Command{"difficulty", Int, Semi_necessary, []int{1, 5}},
+	Command{"difficulty", Int, Semi_necessary, []int{0, 5}},
 	Command{"stagefile", Path, Unnecessary, IMAGE_EXTS},
 	Command{"banner", Path, Unnecessary, IMAGE_EXTS},
 	Command{"backbmp", Path, Unnecessary, IMAGE_EXTS},
@@ -833,6 +833,10 @@ func CheckBmsFile(bmsFile *BmsFile) {
 				} else if total < defaultTotal / overRate && totalPerNotes < 0.2 {
 					bmsFile.Logs.addNewLog(Notice, fmt.Sprintf("#TOTAL is too low(TotalNotes=%d): %s", bmsFile.TotalNotes, val))
 				}
+			}
+		} else if command.Name == "difficulty" {
+			if val == "0" {
+				bmsFile.Logs.addNewLog(Warning, "#DIFFICULTY is 0(Undefined)")
 			}
 		} else if command.Name == "defexrank" {
 			bmsFile.Logs.addNewLog(Notice, "#DEFEXRANK is defined: " + val)
