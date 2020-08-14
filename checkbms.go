@@ -622,11 +622,10 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 			hasMultibyteRune = true
 		}
 
-		correctLine := false
 		if strings.HasPrefix(line, "*") || strings.HasPrefix(line, "%") { // skip comment/meta line
-			correctLine = true
+			goto correctLine
 		}
-		if !correctLine {
+		if strings.HasPrefix(line, "#") {
 			for _, command := range COMMANDS {
 				if strings.HasPrefix(strings.ToLower(line), "#" + command.Name + " ") ||
 				strings.ToLower(line) == ("#" + command.Name) {
@@ -643,12 +642,9 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 					if !ok || (ok && data != "") { // 重複しても空文字だったら値を採用しない
 						bmsFile.Header[command.Name] = data
 					}
-					correctLine = true
-					break
+					goto correctLine
 				}
 			}
-		}
-		if !correctLine {
 			for _, command := range NUMBERING_COMMANDS {
 				if regexp.MustCompile(`#` + command.Name + `[0-9a-z]{2} .+`).MatchString(strings.ToLower(line)) {
 					data := ""
@@ -682,50 +678,42 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 					} else {
 						replace(&bmsFile.HeaderNumbering)
 					}
-					correctLine = true
-					break
+					goto correctLine
 				}
 			}
-		}
-		if !correctLine {
 			if regexp.MustCompile(`#[0-9]{3}[0-9a-z]{2}:.+`).MatchString(strings.ToLower(line)) {
 				data := strings.TrimSpace(line[7:])
 				ch := strings.ToLower(line[4:6])
 				if ch == "02" {
 					if regexp.MustCompile(`^\d+(?:\.\d+)?$`).MatchString(data) {
 						bmsFile.Pattern = append(bmsFile.Pattern, definition{strings.ToLower(line[1:6]), strings.ToLower(data)})
-						correctLine = true
+						goto correctLine
 					}
 				} else {
 					if len(data) % 2 == 0 && regexp.MustCompile(`^[0-9a-zA-Z]+$`).MatchString(data) { // TODO invalid lineではなくinvalid valueとして出力したい
 						bmsFile.Pattern = append(bmsFile.Pattern, definition{strings.ToLower(line[1:6]), strings.ToLower(data)})
-						correctLine = true
+						goto correctLine
 					}
 				}
 			}
-		}
-		if !correctLine {
 			if regexp.MustCompile(`#[0-9]{3}sc:.+`).MatchString(strings.ToLower(line)) { // SCROLL Speed
 				bmsFile.Pattern = append(bmsFile.Pattern, definition{strings.ToLower(line[1:6]), strings.ToLower(line[7:])})
-				correctLine = true
+				goto correctLine
 			}
-		}
-		if !correctLine {
 			for _, command := range randomCommands {
 				if strings.HasPrefix(strings.ToLower(line), "#" + command + " ") || strings.ToLower(line) == ("#" + command) {
 					// TODO: #IF対応
 					/*length := utf8.RuneCountInString(command) + 1
 					data := strings.TrimSpace(line[length:])
 					bmsFile.Pattern = append(bmsFile.Pattern, definition{command, strings.ToLower(length)})*/
-					correctLine = true
-					break
+					goto correctLine
 				}
 			}
 		}
 
-		if !correctLine {
-			bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Invalid line(%d): %s", lineNumber, line))
-		}
+		bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Invalid line(%d): %s", lineNumber, line))
+
+		correctLine:
 	}
 	if scanner.Err() != nil {
 		return nil, fmt.Errorf("BMSfile scan error: " + scanner.Err().Error())
