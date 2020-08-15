@@ -9,7 +9,7 @@ options
 - diff : In addition, check differences between bms files when you entry bms folder path.
 
 ## License
-[Apache License 2.0](https://github.com/Shimi9999/BMSChecker/blob/master/LICENSE)
+[Apache License 2.0](https://github.com/Shimi9999/checkbms/blob/master/LICENSE)
 
 ## Reference
 - [BMS command memo (JP)](http://unhappyangel.tripod.com/bms/format/)
