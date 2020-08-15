@@ -537,7 +537,7 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 		}
 		line, _, err := transform.String(japanese.ShiftJIS.NewDecoder(), trimmedText)
 		if err != nil {
-			return nil, fmt.Errorf("ShiftJIS decode error: " + err.Error())
+			return nil, fmt.Errorf("Shift-JIS decode error: " + err.Error())
 		}
 		if !hasMultibyteRune && containsMultibyteRune(line) {
 			hasMultibyteRune = true
@@ -650,9 +650,9 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 	}
 	if isUtf8 {
 		if hasMultibyteRune {
-			bmsFile.Logs.addNewLog(Error, "Bmsfile charset is UTF-8 and contains multibyte characters")
+			bmsFile.Logs.addNewLog(Error, "Bmsfile charset is not Shift-JIS, but UTF-8 and contains multibyte characters")
 		} else {
-			bmsFile.Logs.addNewLog(Warning, "Bmsfile charset is UTF-8")
+			bmsFile.Logs.addNewLog(Notice, "Bmsfile charset is not Shift-JIS, but UTF-8")
 		}
 	}
 
@@ -738,9 +738,9 @@ func CheckBmsFile(bmsFile *BmsFile) {
 				overRate := 1.6
 				totalPerNotes := total / float64(bmsFile.TotalNotes) // TODO 適切な基準値は？
 				if total > defaultTotal * overRate && totalPerNotes > 0.35 {
-					bmsFile.Logs.addNewLog(Notice, fmt.Sprintf("#TOTAL is too high(TotalNotes=%d): %s", bmsFile.TotalNotes, val))
+					bmsFile.Logs.addNewLog(Notice, fmt.Sprintf("#TOTAL is very high(TotalNotes=%d): %s", bmsFile.TotalNotes, val))
 				} else if total < defaultTotal / overRate && totalPerNotes < 0.2 {
-					bmsFile.Logs.addNewLog(Notice, fmt.Sprintf("#TOTAL is too low(TotalNotes=%d): %s", bmsFile.TotalNotes, val))
+					bmsFile.Logs.addNewLog(Notice, fmt.Sprintf("#TOTAL is very low(TotalNotes=%d): %s", bmsFile.TotalNotes, val))
 				}
 			}
 		} else if command.Name == "difficulty" {
@@ -893,11 +893,11 @@ func CheckBmsFile(bmsFile *BmsFile) {
 				if ongoingLNs[obj.Channel] == nil {
 					ongoingLNs[obj.Channel] = &obj
 				} else if bmsFile.Header["lnobj"] == "" {
-					if ongoingLNs[obj.Channel].Value != obj.Value {
+					/*if ongoingLNs[obj.Channel].Value != obj.Value {
 						bmsFile.Logs.addNewLog(Notice, fmt.Sprintf("LN start and end are not equal: %s(#%d,%d/%d) -> %s(#%d,%d/%d)",
 							strings.ToUpper(ongoingLNs[obj.Channel].value36()), ongoingLNs[obj.Channel].Measure, ongoingLNs[obj.Channel].Position.Numerator, ongoingLNs[obj.Channel].Position.Denominator,
 							strings.ToUpper(obj.value36()), momentObjs[0].Measure, momentObjs[0].Position.Numerator, momentObjs[0].Position.Denominator))
-					}
+					}*/
 					ongoingLNs[obj.Channel] = nil
 				}
 			} else if (chint >= 11 && chint <= 19) || (chint >= 21 && chint <= 29) {
