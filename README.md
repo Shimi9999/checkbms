@@ -19,5 +19,3 @@ options
 - [楽曲製作者向け資料 · exch-bms2/beatoraja Wiki](https://github.com/exch-bms2/beatoraja/wiki/%E6%A5%BD%E6%9B%B2%E8%A3%BD%E4%BD%9C%E8%80%85%E5%90%91%E3%81%91%E8%B3%87%E6%96%99)
 - [Obj Tech Lovers](https://nekokan.dyndns.info/~otlovers/index.html)
 - [Mid2BMS](https://github.com/yuinore/Mid2BMS)  
-  License: MIT License  
-  Copyright (c) 2017 yuinore
