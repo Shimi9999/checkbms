@@ -12,7 +12,7 @@ options
 [Apache License 2.0](https://github.com/Shimi9999/checkbms/blob/master/LICENSE)
 
 ## Reference
-- [BMS command memo (JP)](http://unhappyangel.tripod.com/bms/format/)
+- [BMS command memo (JP)](https://hitkey.nekokan.dyndns.info/cmdsJP.htm)
 - [BMS仕様書(もどき)](http://unhappyangel.tripod.com/bms/format/)
 - [■音ゲーをつくろ～ ♪(^^)♪](http://www.charatsoft.com/develop/otogema/)
 - [譜面作成の流れ - BMSE Help](https://hitkey.nekokan.dyndns.info/bmse_help_full/usage.html)
