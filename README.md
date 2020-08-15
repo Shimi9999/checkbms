@@ -6,7 +6,7 @@ A package and command that check format and dependence of bms file or folder.
 checkbms [option][bms file or folder path]
 ```
 options
-- diff : In addition, check differences between bms files when you entry bms folder path.
+- -diff : In addition, check differences between bms files when you entry bms folder path.
 
 ## License
 [Apache License 2.0](https://github.com/Shimi9999/checkbms/blob/master/LICENSE)
