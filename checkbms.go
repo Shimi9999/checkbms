@@ -484,8 +484,9 @@ func scanBmsDirectory(path string, isRootDir bool) (*Directory, error) {
 		if isRootDir && IsBmsFile(f.Name()) {
 			var bmsfile *BmsFile
 			if filepath.Ext(filePath) == ".bmson" {
-				bmsfile = newBmsFile(filePath) // TODO 仮 loadBmson作る
-				//bmsfile, err := LoadBmson(bmspath)
+				// TODO loadBmson作る
+				// bmsfile, err := LoadBmson(bmspath)
+				continue
 			} else {
 				var err error
 				bmsfile, err = ScanBmsFile(filePath)
@@ -657,9 +658,9 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 	}
 	if isUtf8 {
 		if hasMultibyteRune {
-			bmsFile.Logs.addNewLog(Error, "Bmsfile charset is not Shift-JIS, but UTF-8 and contains multibyte characters")
+			bmsFile.Logs.addNewLog(Error, "Bmsfile charset is UTF-8, not Shift-JIS, and contains multibyte characters")
 		} else {
-			bmsFile.Logs.addNewLog(Notice, "Bmsfile charset is not Shift-JIS, but UTF-8")
+			bmsFile.Logs.addNewLog(Notice, "Bmsfile charset is UTF-8, not Shift-JIS")
 		}
 	}
 
@@ -1055,7 +1056,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 
 	// check filename (must do after used check)
 	filenameLog := func(path string) {
-		bmsDir.Logs.addNewLog(Error, "This filename has environment-dependent characters: " + path)
+		bmsDir.Logs.addNewLog(Warning, "This filename has environment-dependent characters: " + path)
 	}
 	for _, file := range bmsDir.BmsFiles {
 		if rPath := relativePathFromBmsRoot(file.Path); containsMultibyteRune(rPath) {
@@ -1083,7 +1084,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 	// TODO ファイルごとの比較ではなく、WAB/BMP定義・WAB/BMP配置でまとめて比較する？
 	if doDiffCheck {
 		missingLog := func(path, val string) string {
-			return fmt.Sprintf("Missing(%s): %s", path, val)
+			return fmt.Sprintf("Missing(%s): %s", relativePathFromBmsRoot(path), val)
 		}
 		for i := 0; i < len(bmsDir.BmsFiles); i++ {
 			for j := i+1; j < len(bmsDir.BmsFiles); j++ {
@@ -1105,7 +1106,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 					ed, ses := diff.Onp(iDefStrs, jDefStrs)
 					if ed > 0 {
 						log := newLog(Warning, fmt.Sprintf("There are %d differences in %s definitions: %s %s",
-							ed, string(wob), iBmsFile.Path, jBmsFile.Path))
+							ed, string(wob), relativePathFromBmsRoot(iBmsFile.Path), relativePathFromBmsRoot(jBmsFile.Path)))
 						ii, jj := 0, 0
 					  for _, r := range ses {
 					    switch r {
@@ -1175,7 +1176,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 					}
 					if len(logs) > 0 {
 						log := Log{Level: Warning, Message: fmt.Sprintf("There are %d differences in %s objects: %s, %s",
-								len(logs), string(wob), iBmsFile.Path, jBmsFile.Path), SubLogs: logs}
+								len(logs), string(wob), relativePathFromBmsRoot(iBmsFile.Path), relativePathFromBmsRoot(jBmsFile.Path)), SubLogs: logs}
 						bmsDir.Logs = append(bmsDir.Logs, log)
 					}
 				}
