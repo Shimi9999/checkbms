@@ -1,0 +1,10 @@
+faiface/beep
+Copyright (c) 2017 Michal Štrba
+Released under the MIT License
+https://opensource.org/licenses/mit-license.php
+---------------------------------------------------------
+
+saintfish/chardet
+Copyright (c) 2012 chardet Authors
+Released under the ICU License
+https://github.com/saintfish/chardet/blob/master/LICENSE
