@@ -947,15 +947,15 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 		}
 		return relativePath
 	}
-	baseToLower := func(path string) string {
-		base := strings.ToLower(filepath.Base(path))
-		return path[:len(path) - len(base)] + base
+	relativeToLower := func(path string) string {
+		relative := strings.ToLower(relativePathFromBmsRoot(path))
+		return path[:len(path) - len(relative)] + relative
 	}
 	containsInNonBmsFiles := func(path string, exts []string) bool {
 		contains := false // 拡張子補完の対称ファイルを全てUsedにする
-		definedFilePath := filepath.Clean(baseToLower(path))
+		definedFilePath := filepath.Clean(strings.ToLower(path))
 		for i := range bmsDir.NonBmsFiles {
-			realFilePath := relativePathFromBmsRoot(baseToLower(bmsDir.NonBmsFiles[i].Path))
+			realFilePath := relativePathFromBmsRoot(relativeToLower(bmsDir.NonBmsFiles[i].Path))
 			if definedFilePath == realFilePath {
 				bmsDir.NonBmsFiles[i].Used = true
 				contains = true
