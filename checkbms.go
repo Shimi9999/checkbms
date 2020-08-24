@@ -948,10 +948,17 @@ func CheckBmsFile(bmsFile *BmsFile) {
 		}
 	}
 	checkDefinedObjIsUsed(Bmp, bmsFile.HeaderBmp, bmsFile.BmsBmpObjs, "00", "") // misslayer
-	checkDefinedObjIsUsed(Wav, bmsFile.HeaderWav, bmsFile.BmsWavObjs, "", strings.ToLower(bmsFile.Header["lnobj"]))
+	checkDefinedObjIsUsed(Wav, bmsFile.HeaderWav, bmsFile.BmsWavObjs, "00", strings.ToLower(bmsFile.Header["lnobj"]))
 	checkDefinedObjIsUsed(Bpm, bmsFile.HeaderExtendedBpm, bmsFile.BmsExtendedBpmObjs, "", "")
 	checkDefinedObjIsUsed(Stop, bmsFile.HeaderStop, bmsFile.BmsStopObjs, "", "")
 	checkDefinedObjIsUsed(Scroll, bmsFile.HeaderScroll, bmsFile.BmsScrollObjs, "", "")
+
+	// check sound of mine explosion is used
+	for _, def := range bmsFile.HeaderWav {
+		if def.index() == "00" && len(bmsFile.BmsMineObjs) == 0 {
+			bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Defined mine explision wav(#WAV00) is not used: %s", def.Value))
+		}
+	}
 
 	// Check WAV duplicate
 	boi := newBmsObjsIterator(bmsFile.BmsWavObjs)
