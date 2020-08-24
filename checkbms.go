@@ -224,7 +224,11 @@ func (bo bmsObj) string(bmsFile *BmsFile) string {
 
 type measureLength struct {
 	Measure int
-	Length float64
+	LengthStr string
+}
+func (ml measureLength) length() float64 {
+	length, _ := strconv.ParseFloat(ml.LengthStr, 64)
+	return length
 }
 
 type bmsObjsIterator struct {
@@ -610,11 +614,8 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 				data := strings.TrimSpace(line[7:])
 				if channel == "02" {
 					if regexp.MustCompile(`^\d+(?:\.\d+)?$`).MatchString(data) {
-						length, _ := strconv.ParseFloat(data, 64)
-						bmsFile.BmsMeasureLengths = append(bmsFile.BmsMeasureLengths, measureLength{Measure: measure, Length: length})
+						bmsFile.BmsMeasureLengths = append(bmsFile.BmsMeasureLengths, measureLength{Measure: measure, LengthStr: data})
 						goto correctLine
-					} else {
-						// invalid value log
 					}
 				} else {
 					const (
@@ -962,6 +963,25 @@ func CheckBmsFile(bmsFile *BmsFile) {
 	for _, lnStart := range ongoingLNsSlice {
 		bmsFile.Logs.addNewLog(Error, fmt.Sprintf("LN is not finished: %s(#%d,%d/%d)",
 			strings.ToUpper(lnStart.value36()), lnStart.Measure, lnStart.Position.Numerator, lnStart.Position.Denominator))
+	}
+
+	// check measure length
+	duplicateMeasureLength := []measureLength{}
+	for i, mlen := range bmsFile.BmsMeasureLengths {
+		if mlen.length() <= 0 {
+			bmsFile.Logs.addNewLog(Error, fmt.Sprintf("#%03d measure length has invalid value: %f", mlen.Measure, mlen.LengthStr))
+		}
+		duplicateMeasureLength = append(duplicateMeasureLength, mlen)
+		if i == len(bmsFile.BmsMeasureLengths)-1 || mlen.Measure != bmsFile.BmsMeasureLengths[i+1].Measure {
+			if len(duplicateMeasureLength) > 1 {
+				lens := duplicateMeasureLength[0].LengthStr
+				for j := 1; j < len(duplicateMeasureLength); j++ {
+					lens += ", " + duplicateMeasureLength[j].LengthStr
+				}
+				bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("#%03d measure length is duplicate: %s", mlen.Measure, lens))
+			}
+			duplicateMeasureLength = []measureLength{}
+		}
 	}
 }
 
