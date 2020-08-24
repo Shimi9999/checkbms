@@ -40,10 +40,6 @@ type Directory struct {
 func newDirectory(path string) *Directory {
 	var d Directory
 	d.Path = path
-	d.BmsFiles = make([]BmsFile, 0)
-	d.NonBmsFiles = make([]NonBmsFile, 0)
-	d.Directories = make([]Directory, 0)
-	d.Logs = make([]Log, 0)
 	return &d
 }
 func (d Directory) LogString(base bool) string {
@@ -94,10 +90,6 @@ func newBmsFile(path string) *BmsFile {
 	var bf BmsFile
 	bf.Path = path
 	bf.Header = make(map[string]string, 0)
-	bf.HeaderWav = make([]definition, 0)
-	bf.HeaderBmp = make([]definition, 0)
-	bf.HeaderNumbering = make([]definition, 0)
-	bf.Logs = make([]Log, 0)
 	return &bf
 }
 func (bf BmsFile) calculateDefaultTotal() float64 {
@@ -278,7 +270,6 @@ func newLog(level AlertLevel, message string) *Log {
 	var log Log
 	log.Level = level
 	log.Message = message
-	log.SubLogs = []string{}
 	return &log
 }
 func (log Log) String() string {
