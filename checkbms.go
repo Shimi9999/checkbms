@@ -916,6 +916,43 @@ func CheckBmsFile(bmsFile *BmsFile) {
 		}
 	}
 
+	// check note overlap
+	notBgmWavObjs := []bmsObj{}
+	for _, obj := range bmsFile.BmsWavObjs {
+		if obj.Channel != "01" {
+			notBgmWavObjs = append(notBgmWavObjs, obj)
+		}
+	}
+	allNotes := append(notBgmWavObjs, bmsFile.BmsMineObjs...)
+	sort.Slice(allNotes, func(i, j int) bool { return allNotes[i].time() < allNotes[j].time() })
+	boi = newBmsObjsIterator(allNotes) // TODO イテレータ内でソートすべき？
+	for momentObjs := boi.next(); len(momentObjs) > 0; momentObjs = boi.next() {
+		laneObjs := make([][]bmsObj, 20)
+		for _, obj := range momentObjs {
+			lane, _ := strconv.Atoi(obj.Channel[1:2])
+			switch obj.Channel[:1] {
+			case "2", "4", "6", "e":
+				lane += 10
+			}
+			if laneObjs[lane] == nil {
+				laneObjs[lane] = []bmsObj{}
+			}
+			laneObjs[lane] = append(laneObjs[lane], obj)
+		}
+		for _, objs := range laneObjs {
+			if objs != nil && len(objs) > 1 {
+				fp := fraction{objs[0].Position.Numerator, objs[0].Position.Denominator}
+				fp.reduce()
+				s := ""
+				for _, obj := range objs {
+					s += fmt.Sprintf("[%s]%s ", obj.Channel, strings.ToUpper(obj.value36()))
+				}
+				bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Placed notes overlap(#%03d,%d/%d): %s",
+					objs[0].Measure, fp.Numerator, fp.Denominator, s))
+			}
+		}
+	}
+
 	// Check end of LN exists
 	noteObjs := []bmsObj{}
 	for _, obj := range bmsFile.BmsWavObjs {
