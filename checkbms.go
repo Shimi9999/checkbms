@@ -451,7 +451,7 @@ var COMMANDS = []Command{
 	Command{"artist", String, Semi_necessary, nil},
 	Command{"subtitle", String, Unnecessary, nil},
 	Command{"subartist", String, Unnecessary, nil},
-	Command{"bpm", Float, Necessary, []float64{0, math.MaxFloat64}},
+	Command{"bpm", Float, Necessary, []float64{math.SmallestNonzeroFloat64, math.MaxFloat64}},
 	Command{"playlevel", Int, Semi_necessary, []int{0, math.MaxInt64}},
 	Command{"rank", Int, Semi_necessary, []int{0, 4}},
 	Command{"defexrank", Float, Unnecessary, []float64{0, math.MaxFloat64}},
@@ -471,8 +471,8 @@ var COMMANDS = []Command{
 var INDEXED_COMMANDS = []Command{
 	Command{"wav", Path, Necessary, AUDIO_EXTS},
 	Command{"bmp", Path, Unnecessary, BMP_EXTS},
-	Command{"bpm", Float, Unnecessary, []float64{0, math.MaxFloat64}},
-	Command{"stop", Float, Unnecessary, []float64{0, math.MaxFloat64}},
+	Command{"bpm", Float, Unnecessary, []float64{math.SmallestNonzeroFloat64, math.MaxFloat64}},
+	Command{"stop", Float, Unnecessary, []float64{math.SmallestNonzeroFloat64, math.MaxFloat64}},
 	Command{"scroll", Float, Unnecessary, []float64{-math.MaxFloat64, math.MaxFloat64}},
 }
 
