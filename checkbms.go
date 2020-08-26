@@ -190,7 +190,8 @@ func (bf *BmsFile) sortBmsObjs() {
 	sortObjs(bf.BmsStopObjs)
 	sortObjs(bf.BmsScrollObjs)
 	sort.Slice(bf.BmsMeasureLengths, func(i, j int) bool { return bf.BmsMeasureLengths[i].Measure < bf.BmsMeasureLengths[j].Measure })
-
+}
+func (bf *BmsFile) setIsLNEnd() {
 	ongoingLNs := map[int]bool{}
 	for i := 0; i < len(bf.BmsWavObjs); i++ {
 		if bf.BmsWavObjs[i].Channel == "01" {
@@ -702,7 +703,7 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 						channelType = Scroll
 					}
 
-					if channelType != 0 && len(data) % 2 == 0 && regexp.MustCompile(`^[0-9a-zA-Z]+$`).MatchString(data) { // TODO invalid lineではなくinvalid valueとして出力したい
+					if channelType != 0 && len(data) % 2 == 0 && regexp.MustCompile(`^[0-9a-zA-Z]+$`).MatchString(data) {
 						for i := 0; i < len(data)/2; i++ {
 							valStr := data[i*2:i*2+2]
 							val, _ := strconv.ParseInt(valStr, 36, 64)
@@ -749,6 +750,7 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 	}
 
 	bmsFile.sortBmsObjs()
+	bmsFile.setIsLNEnd()
 
 	isUtf8 := hasUtf8Bom
 	if !isUtf8 {
@@ -947,7 +949,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 			}
 		}
 	}
-	checkDefinedObjIsUsed(Bmp, bmsFile.HeaderBmp, bmsFile.BmsBmpObjs, "00", "") // misslayer
+	checkDefinedObjIsUsed(Bmp, bmsFile.HeaderBmp, bmsFile.BmsBmpObjs, "00", "") // 00:misslayer
 	checkDefinedObjIsUsed(Wav, bmsFile.HeaderWav, bmsFile.BmsWavObjs, "00", strings.ToLower(bmsFile.Header["lnobj"]))
 	checkDefinedObjIsUsed(Bpm, bmsFile.HeaderExtendedBpm, bmsFile.BmsExtendedBpmObjs, "", "")
 	checkDefinedObjIsUsed(Stop, bmsFile.HeaderStop, bmsFile.BmsStopObjs, "", "")
