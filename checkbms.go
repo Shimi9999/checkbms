@@ -1,26 +1,26 @@
 package checkbms
 
 import (
-	"os"
-	"fmt"
-	"strings"
-	"strconv"
 	"bufio"
 	"bytes"
-	"regexp"
-	"sort"
+	"fmt"
+	"io/ioutil"
 	"math"
 	"math/big"
-	"io/ioutil"
+	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
 	"unicode/utf8"
 
+	"github.com/saintfish/chardet"
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/transform"
-	"github.com/saintfish/chardet"
 
-	"github.com/Shimi9999/checkbms/diff"
 	"github.com/Shimi9999/checkbms/audio"
+	"github.com/Shimi9999/checkbms/diff"
 )
 
 type File struct {
@@ -35,8 +35,9 @@ type Directory struct {
 	OtherFiles []NonBmsFile*/
 	NonBmsFiles []NonBmsFile
 	Directories []Directory
-	Logs Logs
+	Logs        Logs
 }
+
 func newDirectory(path string) *Directory {
 	var d Directory
 	d.Path = path
@@ -60,18 +61,20 @@ func (d Directory) LogString(base bool) string {
 
 type definition struct {
 	Command string
-	Value string
+	Value   string
 }
 
 type indexedDefinition struct {
 	Command string
-	Value string
+	Value   string
 }
+
 func (id indexedDefinition) index() string {
 	return strings.ToLower(id.Command[len(id.Command)-2:])
 }
 
 type objType int
+
 const (
 	Wav objType = iota + 1
 	Bmp
@@ -81,6 +84,7 @@ const (
 	Stop
 	Scroll
 )
+
 func (ot objType) string() string {
 	switch ot {
 	case Wav:
@@ -103,24 +107,25 @@ func (ot objType) string() string {
 
 type BmsFile struct {
 	File
-	Header map[string]string
-	HeaderWav []indexedDefinition
-	HeaderBmp []indexedDefinition
-	HeaderExtendedBpm []indexedDefinition
-	HeaderStop []indexedDefinition
-	HeaderScroll []indexedDefinition
-	BmsWavObjs []bmsObj
-	BmsBmpObjs []bmsObj
-	BmsMineObjs []bmsObj
-	BmsBpmObjs []bmsObj
+	Header             map[string]string
+	HeaderWav          []indexedDefinition
+	HeaderBmp          []indexedDefinition
+	HeaderExtendedBpm  []indexedDefinition
+	HeaderStop         []indexedDefinition
+	HeaderScroll       []indexedDefinition
+	BmsWavObjs         []bmsObj
+	BmsBmpObjs         []bmsObj
+	BmsMineObjs        []bmsObj
+	BmsBpmObjs         []bmsObj
 	BmsExtendedBpmObjs []bmsObj
-	BmsStopObjs []bmsObj
-	BmsScrollObjs []bmsObj
-	BmsMeasureLengths []measureLength
-	Keymode int // 5, 7, 9, 10, 14, 24, 48
-	TotalNotes int
-	Logs Logs
+	BmsStopObjs        []bmsObj
+	BmsScrollObjs      []bmsObj
+	BmsMeasureLengths  []measureLength
+	Keymode            int // 5, 7, 9, 10, 14, 24, 48
+	TotalNotes         int
+	Logs               Logs
 }
+
 func newBmsFile(path string) *BmsFile {
 	var bf BmsFile
 	bf.Path = path
@@ -130,9 +135,9 @@ func newBmsFile(path string) *BmsFile {
 func (bf BmsFile) calculateDefaultTotal() float64 {
 	tn := float64(bf.TotalNotes)
 	if bf.Keymode >= 24 {
-		return math.Max(300.0, 7.605 * (tn + 100.0) / (0.01 * tn + 6.5))
+		return math.Max(300.0, 7.605*(tn+100.0)/(0.01*tn+6.5))
 	} else {
-		return math.Max(260.0, 7.605 * tn / (0.01 * tn + 6.5))
+		return math.Max(260.0, 7.605*tn/(0.01*tn+6.5))
 	}
 }
 func (bf BmsFile) headerIndexedDefs(t objType) []indexedDefinition {
@@ -228,6 +233,7 @@ type NonBmsFile struct {
 	File
 	Used bool
 }
+
 func newNonBmsFile(path string) *NonBmsFile {
 	var nbf NonBmsFile
 	nbf.Path = path
@@ -235,9 +241,10 @@ func newNonBmsFile(path string) *NonBmsFile {
 }
 
 type fraction struct {
-	Numerator int
+	Numerator   int
 	Denominator int
 }
+
 func (f fraction) value() float64 {
 	if f.Denominator == 0 {
 		return -1.0
@@ -257,13 +264,14 @@ func (f *fraction) reduce() {
 }
 
 type bmsObj struct {
-	ObjType objType
-	Channel string
-	Measure int
+	ObjType  objType
+	Channel  string
+	Measure  int
 	Position fraction
-	Value int // 36進数→10進数
-	IsLNEnd bool
+	Value    int // 36進数→10進数
+	IsLNEnd  bool
 }
+
 func (bo bmsObj) time() float64 {
 	return float64(bo.Measure) + bo.Position.value()
 }
@@ -285,9 +293,10 @@ func (bo bmsObj) string(bmsFile *BmsFile) string {
 }
 
 type measureLength struct {
-	Measure int
+	Measure   int
 	LengthStr string
 }
+
 func (ml measureLength) length() float64 {
 	length, _ := strconv.ParseFloat(ml.LengthStr, 64)
 	return length
@@ -295,9 +304,10 @@ func (ml measureLength) length() float64 {
 
 type bmsObjsIterator struct {
 	bmsObjs []bmsObj
-	index int
-	time float64
+	index   int
+	time    float64
 }
+
 func newBmsObjsIterator(bmsObjs []bmsObj) *bmsObjsIterator {
 	boi := bmsObjsIterator{}
 	boi.bmsObjs = bmsObjs
@@ -320,18 +330,20 @@ func (boi *bmsObjsIterator) next() (momentObjs []bmsObj) {
 }
 
 type AlertLevel string
+
 const (
-	Error = AlertLevel("ERROR")
+	Error   = AlertLevel("ERROR")
 	Warning = AlertLevel("WARNING")
-	Notice = AlertLevel("NOTICE")
-	Debug = AlertLevel("DEBUG ERROR")
+	Notice  = AlertLevel("NOTICE")
+	Debug   = AlertLevel("DEBUG ERROR")
 )
 
 type Log struct {
-	Level AlertLevel
+	Level   AlertLevel
 	Message string
 	SubLogs []string
 }
+
 func newLog(level AlertLevel, message string) *Log {
 	var log Log
 	log.Level = level
@@ -347,6 +359,7 @@ func (log Log) String() string {
 }
 
 type Logs []Log
+
 func (logs *Logs) addNewLog(level AlertLevel, message string) {
 	*logs = append(*logs, *newLog(level, message))
 }
@@ -362,25 +375,30 @@ func (logs Logs) String() string {
 }
 
 type CommandType int
+
 const (
 	Int CommandType = iota + 1
 	Float
 	String
 	Path
 )
+
 type CommandNecessity int
+
 const (
 	Necessary CommandNecessity = iota + 1
 	Semi_necessary
 	Unnecessary
 )
+
 type Command struct {
-	Name string
-	Type CommandType
-	Necessity CommandNecessity
+	Name          string
+	Type          CommandType
+	Necessity     CommandNecessity
 	BoundaryValue interface{} // Intなら0と100,-10とnilとか。Stringなら*とか(多分不要)。Pathなら許容する拡張子.oog、.wav
 	//Check func(string) []string // 引数の値に対してチェックをしてエラーメッセージ(string)のスライスを返す関数
 }
+
 func (c Command) isInRange(value string) (bool, error) {
 	invalidError := fmt.Errorf("Error isInRange: BoundaryValue is invalid")
 	switch c.Type {
@@ -500,6 +518,7 @@ var BPM_CHANNELS = []string{"03"}
 var EXTENDEDBPM_CHANNELS = []string{"08"}
 var STOP_CHANNELS = []string{"09"}
 var SCROLL_CHANNELS = []string{"sc"}
+
 func matchChannel(ch string, channels []string) bool {
 	for _, c := range channels {
 		if ch == c {
@@ -581,7 +600,7 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 
 	const (
 		initialBufSize = 10000
-		maxBufSize = 1000000
+		maxBufSize     = 1000000
 	)
 	scanner := bufio.NewScanner(file)
 	buf := make([]byte, initialBufSize)
@@ -593,7 +612,7 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 	randomCommands := []string{"random", "if", "endif"}
 	for lineNumber := 0; scanner.Scan(); lineNumber++ {
 		if lineNumber == 0 && bytes.HasPrefix(([]byte)(scanner.Text()), []byte{0xef, 0xbb, 0xbf}) {
-		  hasUtf8Bom = true
+			hasUtf8Bom = true
 		}
 		if bytes.Equal(([]byte)(scanner.Text()), []byte{0xef, 0xbb, 0xbf}) {
 			// entrust isUTF8()
@@ -617,8 +636,8 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 		}
 		if strings.HasPrefix(line, "#") {
 			for _, command := range COMMANDS {
-				if strings.HasPrefix(strings.ToLower(line), "#" + command.Name + " ") ||
-				strings.ToLower(line) == ("#" + command.Name) {
+				if strings.HasPrefix(strings.ToLower(line), "#"+command.Name+" ") ||
+					strings.ToLower(line) == ("#"+command.Name) {
 					data := ""
 					if strings.ToLower(line) != ("#" + command.Name) {
 						length := len(command.Name) + 1
@@ -703,14 +722,14 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 						channelType = Scroll
 					}
 
-					if channelType != 0 && len(data) % 2 == 0 && regexp.MustCompile(`^[0-9a-zA-Z]+$`).MatchString(data) {
+					if channelType != 0 && len(data)%2 == 0 && regexp.MustCompile(`^[0-9a-zA-Z]+$`).MatchString(data) {
 						for i := 0; i < len(data)/2; i++ {
-							valStr := data[i*2:i*2+2]
+							valStr := data[i*2 : i*2+2]
 							val, _ := strconv.ParseInt(valStr, 36, 64)
 							if val == 0 {
 								continue
 							}
-							pos := fraction{i, len(data)/2}
+							pos := fraction{i, len(data) / 2}
 							obj := bmsObj{ObjType: channelType, Channel: channel, Measure: measure, Position: pos, Value: int(val)}
 							switch channelType {
 							case Wav:
@@ -734,7 +753,7 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 				}
 			}
 			for _, command := range randomCommands {
-				if strings.HasPrefix(strings.ToLower(line), "#" + command + " ") || strings.ToLower(line) == ("#" + command) {
+				if strings.HasPrefix(strings.ToLower(line), "#"+command+" ") || strings.ToLower(line) == ("#"+command) {
 					// TODO: #IF対応
 					goto correctLine
 				}
@@ -743,7 +762,7 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 
 		bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Invalid line(%d): %s", lineNumber, line))
 
-		correctLine:
+	correctLine:
 	}
 	if scanner.Err() != nil {
 		return nil, fmt.Errorf("BMSfile scan error: " + scanner.Err().Error())
@@ -784,7 +803,7 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 		}
 
 		if (chint >= 11 && chint <= 19) || (chint >= 21 && chint <= 29) ||
-		(chint >= 51 && chint <= 59) || (chint >= 61 && chint <= 69) {
+			(chint >= 51 && chint <= 59) || (chint >= 61 && chint <= 69) {
 			if obj.value36() != bmsFile.Header["lnobj"] {
 				if (chint >= 51 && chint <= 59) || (chint >= 61 && chint <= 69) {
 					lnCount++
@@ -843,14 +862,14 @@ func CheckBmsFile(bmsFile *BmsFile) {
 		} else if command.Name == "total" {
 			total, _ := strconv.ParseFloat(val, 64)
 			if total < 100 {
-				bmsFile.Logs.addNewLog(Warning, "#TOTAL is under 100: " + val)
+				bmsFile.Logs.addNewLog(Warning, "#TOTAL is under 100: "+val)
 			} else {
 				defaultTotal := bmsFile.calculateDefaultTotal()
 				overRate := 1.6
 				totalPerNotes := total / float64(bmsFile.TotalNotes) // TODO 適切な基準値は？
-				if total > defaultTotal * overRate && totalPerNotes > 0.35 {
+				if total > defaultTotal*overRate && totalPerNotes > 0.35 {
 					bmsFile.Logs.addNewLog(Notice, fmt.Sprintf("#TOTAL is very high(TotalNotes=%d): %s", bmsFile.TotalNotes, val))
-				} else if total < defaultTotal / overRate && totalPerNotes < 0.2 {
+				} else if total < defaultTotal/overRate && totalPerNotes < 0.2 {
 					bmsFile.Logs.addNewLog(Notice, fmt.Sprintf("#TOTAL is very low(TotalNotes=%d): %s", bmsFile.TotalNotes, val))
 				}
 			}
@@ -859,7 +878,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 				bmsFile.Logs.addNewLog(Warning, "#DIFFICULTY is 0(Undefined)")
 			}
 		} else if command.Name == "defexrank" {
-			bmsFile.Logs.addNewLog(Notice, "#DEFEXRANK is defined: " + val)
+			bmsFile.Logs.addNewLog(Notice, "#DEFEXRANK is defined: "+val)
 		} else if command.Name == "lntype" {
 			if val == "2" {
 				bmsFile.Logs.addNewLog(Warning, "#LNTYPE 2(MGQ) is deprecated")
@@ -871,7 +890,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 	subtitle, ok2 := bmsFile.Header["subtitle"]
 	if ok1 && ok2 && subtitle != "" {
 		if strings.HasSuffix(title, subtitle) {
-			bmsFile.Logs.addNewLog(Warning, "#TITLE and #SUBTITLE have same text: " + subtitle)
+			bmsFile.Logs.addNewLog(Warning, "#TITLE and #SUBTITLE have same text: "+subtitle)
 		}
 	}
 
@@ -893,7 +912,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 				bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("#%s value is empty", strings.ToUpper(def.Command)))
 			} else if isInRange, err := INDEXED_COMMANDS[i].isInRange(def.Value); err != nil || !isInRange {
 				if err != nil {
-					bmsFile.Logs.addNewLog(Debug, "isInRange return error: " + def.Value)
+					bmsFile.Logs.addNewLog(Debug, "isInRange return error: "+def.Value)
 				}
 				bmsFile.Logs.addNewLog(Error, fmt.Sprintf("#%s has invalid value: %s", strings.ToUpper(def.Command), def.Value))
 			} else if def.Command == "wav" && filepath.Ext(def.Value) != ".wav" {
@@ -916,7 +935,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 			break
 		}
 		if matchChannel(obj.Channel, NOTE_CHANNELS) {
-			bmsFile.Logs.addNewLog(Warning, "Note exists in 0th measure: " + obj.string(bmsFile))
+			bmsFile.Logs.addNewLog(Warning, "Note exists in 0th measure: "+obj.string(bmsFile))
 		}
 	}
 
@@ -1044,7 +1063,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 					ongoingLNs[obj.Channel] = nil
 				}
 			} else if (chint >= 11 && chint <= 19) || (chint >= 21 && chint <= 29) { // TODO 不可視ノーツと地雷もチェック
-				lnCh := strconv.Itoa(chint+40)
+				lnCh := strconv.Itoa(chint + 40)
 				if ongoingLNs[lnCh] != nil {
 					if obj.value36() == bmsFile.Header["lnobj"] {
 						ongoingLNs[lnCh] = nil
@@ -1075,7 +1094,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 		if err != nil {
 			bmsFile.Logs.addNewLog(Error, fmt.Sprintf("BPM object has invalid value: %s",
 				fmt.Sprintf("#%03d (%d/%d) %s",
-				obj.Measure, obj.Position.Numerator, obj.Position.Denominator, strings.ToUpper(obj.value36()))))
+					obj.Measure, obj.Position.Numerator, obj.Position.Denominator, strings.ToUpper(obj.value36()))))
 		}
 	}
 
@@ -1101,19 +1120,19 @@ func CheckBmsFile(bmsFile *BmsFile) {
 
 func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 	withoutExtPath := func(path string) string {
-		return path[:len(path) - len(filepath.Ext(path))]
+		return path[:len(path)-len(filepath.Ext(path))]
 	}
 	relativePathFromBmsRoot := func(path string) string {
 		relativePath := filepath.Clean(path)
 		rootDirPath := filepath.Clean(bmsDir.Path)
 		if rootDirPath != "." {
-			relativePath = filepath.Clean(relativePath[len(rootDirPath) + 1:])
+			relativePath = filepath.Clean(relativePath[len(rootDirPath)+1:])
 		}
 		return relativePath
 	}
 	relativeToLower := func(path string) string {
 		relative := strings.ToLower(relativePathFromBmsRoot(path))
-		return path[:len(path) - len(relative)] + relative
+		return path[:len(path)-len(relative)] + relative
 	}
 	containsInNonBmsFiles := func(path string, exts []string) bool {
 		contains := false // 拡張子補完の対称ファイルを全てUsedにする
@@ -1124,7 +1143,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 				bmsDir.NonBmsFiles[i].Used = true
 				contains = true
 			} else if exts != nil && hasExts(realFilePath, exts) &&
-			withoutExtPath(definedFilePath) == withoutExtPath(realFilePath) {
+				withoutExtPath(definedFilePath) == withoutExtPath(realFilePath) {
 				bmsDir.NonBmsFiles[i].Used = true
 				contains = true
 			}
@@ -1209,18 +1228,18 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 	ignoreExts := []string{".txt", ".zip", ".rar", ".lzh", ".7z"}
 	for _, nonBmsFile := range bmsDir.NonBmsFiles {
 		if !nonBmsFile.Used && !hasExts(nonBmsFile.Path, ignoreExts) && !isPreview(nonBmsFile.Path) {
-			bmsDir.Logs.addNewLog(Notice, "This file is not used: " + relativePathFromBmsRoot(nonBmsFile.Path))
+			bmsDir.Logs.addNewLog(Notice, "This file is not used: "+relativePathFromBmsRoot(nonBmsFile.Path))
 		}
 	}
 	for _, dir := range bmsDir.Directories {
 		if len(dir.BmsFiles) == 0 && len(dir.NonBmsFiles) == 0 && len(dir.Directories) == 0 {
-			bmsDir.Logs.addNewLog(Notice, "This directory is empty: " + relativePathFromBmsRoot(dir.Path))
+			bmsDir.Logs.addNewLog(Notice, "This directory is empty: "+relativePathFromBmsRoot(dir.Path))
 		}
 	}
 
 	// check filename (must do after used check)
 	filenameLog := func(path string) {
-		bmsDir.Logs.addNewLog(Warning, "This filename has environment-dependent characters: " + path)
+		bmsDir.Logs.addNewLog(Warning, "This filename has environment-dependent characters: "+path)
 	}
 	for _, file := range bmsDir.BmsFiles {
 		if rPath := relativePathFromBmsRoot(file.Path); containsMultibyteRune(rPath) {
@@ -1228,9 +1247,8 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 		}
 	}
 	for _, file := range bmsDir.NonBmsFiles {
-		if rPath := relativePathFromBmsRoot(file.Path);
-		(file.Used || strings.ToLower(filepath.Ext(file.Path)) == ".txt" || isPreview(file.Path)) &&
-		containsMultibyteRune(rPath) {
+		if rPath := relativePathFromBmsRoot(file.Path); (file.Used || strings.ToLower(filepath.Ext(file.Path)) == ".txt" || isPreview(file.Path)) &&
+			containsMultibyteRune(rPath) {
 			filenameLog(rPath)
 		}
 	}
@@ -1251,7 +1269,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 			return fmt.Sprintf("Missing(%s): %s", relativePathFromBmsRoot(path), val)
 		}
 		for i := 0; i < len(bmsDir.BmsFiles); i++ {
-			for j := i+1; j < len(bmsDir.BmsFiles); j++ {
+			for j := i + 1; j < len(bmsDir.BmsFiles); j++ {
 				diffDefs := func(t objType, iBmsFile, jBmsFile *BmsFile) {
 					iDefs, jDefs := iBmsFile.headerIndexedDefs(t), jBmsFile.headerIndexedDefs(t)
 					iDefStrs, jDefStrs := []string{}, []string{}
@@ -1266,19 +1284,19 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 						log := newLog(Warning, fmt.Sprintf("There are %d differences in %s definitions: %s %s",
 							ed, t.string(), relativePathFromBmsRoot(iBmsFile.Path), relativePathFromBmsRoot(jBmsFile.Path)))
 						ii, jj := 0, 0
-					  for _, r := range ses {
-					    switch r {
-					    case '=':
-					      ii++
-					      jj++
-					    case '+':
+						for _, r := range ses {
+							switch r {
+							case '=':
+								ii++
+								jj++
+							case '+':
 								log.SubLogs = append(log.SubLogs, missingLog(iBmsFile.Path, jDefStrs[jj]))
-					      jj++
-					    case '-':
+								jj++
+							case '-':
 								log.SubLogs = append(log.SubLogs, missingLog(jBmsFile.Path, iDefStrs[ii]))
-					      ii++
-					    }
-					  }
+								ii++
+							}
+						}
 						bmsDir.Logs = append(bmsDir.Logs, *log)
 					}
 				}
@@ -1289,7 +1307,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 					logs := []string{}
 					iObjs, jObjs := iBmsFile.bmsObjs(t), jBmsFile.bmsObjs(t)
 					ii, jj := 0, 0
-					for ; ii < len(iObjs) && jj < len(jObjs); {
+					for ii < len(iObjs) && jj < len(jObjs) {
 						iObj, jObj := iObjs[ii], jObjs[jj]
 						if iObj.IsLNEnd {
 							ii++
@@ -1328,7 +1346,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 					}
 					if len(logs) > 0 {
 						log := Log{Level: Warning, Message: fmt.Sprintf("There are %d differences in %s objects: %s, %s",
-								len(logs), t.string(), relativePathFromBmsRoot(iBmsFile.Path), relativePathFromBmsRoot(jBmsFile.Path)), SubLogs: logs}
+							len(logs), t.string(), relativePathFromBmsRoot(iBmsFile.Path), relativePathFromBmsRoot(jBmsFile.Path)), SubLogs: logs}
 						bmsDir.Logs = append(bmsDir.Logs, log)
 					}
 				}
