@@ -129,7 +129,7 @@ type BmsFile struct {
 func newBmsFile(path string) *BmsFile {
 	var bf BmsFile
 	bf.Path = path
-	bf.Header = make(map[string]string, 0)
+	bf.Header = make(map[string]string)
 	return &bf
 }
 func (bf BmsFile) calculateDefaultTotal() float64 {
@@ -1026,7 +1026,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 			laneObjs[lane] = append(laneObjs[lane], obj)
 		}
 		for _, objs := range laneObjs {
-			if objs != nil && len(objs) > 1 {
+			if len(objs) > 1 {
 				fp := fraction{objs[0].Position.Numerator, objs[0].Position.Denominator}
 				fp.reduce()
 				s := ""
@@ -1102,7 +1102,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 	duplicateMeasureLength := []measureLength{}
 	for i, mlen := range bmsFile.BmsMeasureLengths {
 		if mlen.length() <= 0 {
-			bmsFile.Logs.addNewLog(Error, fmt.Sprintf("#%03d measure length has invalid value: %f", mlen.Measure, mlen.LengthStr))
+			bmsFile.Logs.addNewLog(Error, fmt.Sprintf("#%03d measure length has invalid value: %s", mlen.Measure, mlen.LengthStr))
 		}
 		duplicateMeasureLength = append(duplicateMeasureLength, mlen)
 		if i == len(bmsFile.BmsMeasureLengths)-1 || mlen.Measure != bmsFile.BmsMeasureLengths[i+1].Measure {
@@ -1359,7 +1359,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 
 func hasExts(path string, exts []string) bool {
 	for _, ext := range exts {
-		if strings.ToLower(ext) == strings.ToLower(filepath.Ext(path)) {
+		if strings.EqualFold(ext, filepath.Ext(path)) {
 			return true
 		}
 	}
