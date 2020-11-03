@@ -65,12 +65,13 @@ type definition struct {
 }
 
 type indexedDefinition struct {
-	Command string
-	Value   string
+	CommandName string
+	Index       string
+	Value       string
 }
 
-func (id indexedDefinition) index() string {
-	return strings.ToLower(id.Command[len(id.Command)-2:])
+func (id indexedDefinition) equalCommand(command string) bool {
+	return command == id.CommandName+id.Index
 }
 
 type objType int
@@ -176,7 +177,7 @@ func (bf BmsFile) bmsObjs(t objType) []bmsObj {
 }
 func (bf BmsFile) definedValue(t objType, index string) string {
 	for _, def := range bf.headerIndexedDefs(t) { // TODO 高速化？ソートしてO(logn)にする？
-		if def.index() == index {
+		if def.Index == index {
 			return def.Value
 		}
 	}
@@ -666,7 +667,7 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 					replace := func(defs *[]indexedDefinition) {
 						isDuplicate := false
 						for i := range *defs {
-							if (*defs)[i].Command == lineCommand {
+							if (*defs)[i].equalCommand(lineCommand) {
 								bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("#%s is duplicate: old=%s new=%s",
 									strings.ToUpper(lineCommand), (*defs)[i].Value, data))
 								if data != "" {
@@ -677,7 +678,7 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 							}
 						}
 						if !isDuplicate {
-							*defs = append(*defs, indexedDefinition{Command: lineCommand, Value: data})
+							*defs = append(*defs, indexedDefinition{CommandName: lineCommand[:len(lineCommand)-2], Index: lineCommand[len(lineCommand)-2:], Value: data})
 						}
 					}
 					switch command.Name {
@@ -909,20 +910,20 @@ func CheckBmsFile(bmsFile *BmsFile) {
 		}
 		for _, def := range defs {
 			if def.Value == "" {
-				bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("#%s value is empty", strings.ToUpper(def.Command)))
+				bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("#%s value is empty", strings.ToUpper(def.CommandName)))
 			} else if isInRange, err := INDEXED_COMMANDS[i].isInRange(def.Value); err != nil || !isInRange {
 				if err != nil {
 					bmsFile.Logs.addNewLog(Debug, "isInRange return error: "+def.Value)
 				}
-				bmsFile.Logs.addNewLog(Error, fmt.Sprintf("#%s has invalid value: %s", strings.ToUpper(def.Command), def.Value))
-			} else if def.Command == "wav" && filepath.Ext(def.Value) != ".wav" {
+				bmsFile.Logs.addNewLog(Error, fmt.Sprintf("#%s has invalid value: %s", strings.ToUpper(def.CommandName), def.Value))
+			} else if def.CommandName == "wav" && filepath.Ext(def.Value) != ".wav" {
 				hasNoWavExtDefs = append(hasNoWavExtDefs, def)
 			}
 		}
 	}
 	if len(hasNoWavExtDefs) > 0 {
 		bmsFile.Logs.addNewLog(Notice, fmt.Sprintf("#WAV definition has non-.wav extension(*%d): %s %s etc...",
-			len(hasNoWavExtDefs), strings.ToUpper(hasNoWavExtDefs[0].Command), hasNoWavExtDefs[0].Value))
+			len(hasNoWavExtDefs), strings.ToUpper(hasNoWavExtDefs[0].CommandName), hasNoWavExtDefs[0].Value))
 	}
 
 	if bmsFile.TotalNotes == 0 {
@@ -943,7 +944,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 	checkDefinedObjIsUsed := func(t objType, definitions []indexedDefinition, objs []bmsObj, ignoreDef string, ignoreObj string) {
 		usedObjs := map[string]bool{}
 		for _, def := range definitions {
-			usedObjs[def.index()] = false
+			usedObjs[def.Index] = false
 		}
 		undefinedObjs := []string{}
 		for _, obj := range objs {
@@ -962,9 +963,9 @@ func CheckBmsFile(bmsFile *BmsFile) {
 			}
 		}
 		for _, def := range definitions {
-			if !usedObjs[def.index()] && def.index() != ignoreDef {
+			if !usedObjs[def.Index] && def.Index != ignoreDef {
 				bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Defined %s object is not used: %s(%s)",
-					t.string(), strings.ToUpper(def.index()), def.Value))
+					t.string(), strings.ToUpper(def.Index), def.Value))
 			}
 		}
 	}
@@ -976,7 +977,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 
 	// check sound of mine explosion is used
 	for _, def := range bmsFile.HeaderWav {
-		if def.index() == "00" && len(bmsFile.BmsMineObjs) == 0 {
+		if def.Index == "00" && len(bmsFile.BmsMineObjs) == 0 {
 			bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Defined mine explision wav(#WAV00) is not used: %s", def.Value))
 		}
 	}
@@ -1178,7 +1179,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 		for _, def := range bmsFile.HeaderWav {
 			if def.Value != "" {
 				if !containsInNonBmsFiles(def.Value, AUDIO_EXTS) {
-					bmsDir.Logs.addNewLog(Error, noFileMessage(bmsFile.Path, def.Command, def.Value))
+					bmsDir.Logs.addNewLog(Error, noFileMessage(bmsFile.Path, def.CommandName, def.Value))
 				}
 			}
 		}
@@ -1189,7 +1190,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 					exts = MOVIE_EXTS
 				}
 				if !containsInNonBmsFiles(def.Value, exts) {
-					bmsDir.Logs.addNewLog(Error, noFileMessage(bmsFile.Path, def.Command, def.Value))
+					bmsDir.Logs.addNewLog(Error, noFileMessage(bmsFile.Path, def.CommandName, def.Value))
 				}
 			}
 		}
@@ -1274,10 +1275,10 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 					iDefs, jDefs := iBmsFile.headerIndexedDefs(t), jBmsFile.headerIndexedDefs(t)
 					iDefStrs, jDefStrs := []string{}, []string{}
 					for _, def := range iDefs {
-						iDefStrs = append(iDefStrs, fmt.Sprintf("#%s %s", strings.ToUpper(def.Command), def.Value))
+						iDefStrs = append(iDefStrs, fmt.Sprintf("#%s %s", strings.ToUpper(def.CommandName), def.Value))
 					}
 					for _, def := range jDefs {
-						jDefStrs = append(jDefStrs, fmt.Sprintf("#%s %s", strings.ToUpper(def.Command), def.Value))
+						jDefStrs = append(jDefStrs, fmt.Sprintf("#%s %s", strings.ToUpper(def.CommandName), def.Value))
 					}
 					ed, ses := diff.Onp(iDefStrs, jDefStrs)
 					if ed > 0 {
