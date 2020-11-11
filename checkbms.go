@@ -1055,12 +1055,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 			if (chint >= 51 && chint <= 59) || (chint >= 61 && chint <= 69) {
 				if ongoingLNs[obj.Channel] == nil {
 					ongoingLNs[obj.Channel] = &obj
-				} else if bmsFile.Header["lnobj"] == "" {
-					/*if ongoingLNs[obj.Channel].Value != obj.Value {
-						bmsFile.Logs.addNewLog(Notice, fmt.Sprintf("LN start and end are not equal: %s(#%d,%d/%d) -> %s(#%d,%d/%d)",
-							strings.ToUpper(ongoingLNs[obj.Channel].value36()), ongoingLNs[obj.Channel].Measure, ongoingLNs[obj.Channel].Position.Numerator, ongoingLNs[obj.Channel].Position.Denominator,
-							strings.ToUpper(obj.value36()), momentObjs[0].Measure, momentObjs[0].Position.Numerator, momentObjs[0].Position.Denominator))
-					}*/
+				} else {
 					ongoingLNs[obj.Channel] = nil
 				}
 			} else if (chint >= 11 && chint <= 19) || (chint >= 21 && chint <= 29) { // TODO 不可視ノーツと地雷もチェック
