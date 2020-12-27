@@ -1084,6 +1084,39 @@ func CheckBmsFile(bmsFile *BmsFile) {
 			strings.ToUpper(lnStart.value36()), lnStart.Measure, lnStart.Position.Numerator, lnStart.Position.Denominator))
 	}
 
+	// count no keysound moments
+	momentCount := 0
+	noWavMomentCount := 0
+	var noWavObjs []bmsObj
+	boi = newBmsObjsIterator(noteObjs)
+	for momentObjs := boi.next(); len(momentObjs) > 0; momentObjs = boi.next() {
+		momentCount++
+		ok := false
+		for _, momObj := range momentObjs {
+			for _, wav := range bmsFile.HeaderWav {
+				if momObj.value36() == wav.Index {
+					ok = true
+					break
+				}
+			}
+			if ok {
+				break
+			}
+		}
+		if !ok {
+			noWavMomentCount++
+			noWavObjs = append(noWavObjs, momentObjs[0])
+		}
+	}
+	if len(noWavObjs) > 0 {
+		bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("No keysound moment exists: %.1f%%(%d/%d)",
+			float64(noWavMomentCount)/float64(momentCount)*100, noWavMomentCount, momentCount))
+		/*for _, obj := range noWavObjs {
+			fmt.Printf("#%d %d/%d, ", obj.Measure, obj.Position.Numerator, obj.Position.Denominator)
+		}
+		fmt.Printf("\n")*/
+	}
+
 	// check bpm value
 	for _, obj := range bmsFile.BmsBpmObjs {
 		_, err := strconv.ParseInt(obj.value36(), 16, 64)
