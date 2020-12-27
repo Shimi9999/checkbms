@@ -1048,7 +1048,9 @@ func CheckBmsFile(bmsFile *BmsFile) {
 		}
 	}
 	ongoingLNs := map[string]*bmsObj{}
-	boi = newBmsObjsIterator(noteObjs)
+	nmObjs := append(noteObjs, bmsFile.BmsMineObjs...)
+	sort.Slice(nmObjs, func(i, j int) bool { return nmObjs[i].time() < nmObjs[j].time() })
+	boi = newBmsObjsIterator(nmObjs)
 	for momentObjs := boi.next(); len(momentObjs) > 0; momentObjs = boi.next() {
 		for _, obj := range momentObjs {
 			chint, _ := strconv.Atoi(obj.Channel)
@@ -1058,16 +1060,29 @@ func CheckBmsFile(bmsFile *BmsFile) {
 				} else {
 					ongoingLNs[obj.Channel] = nil
 				}
-			} else if (chint >= 11 && chint <= 19) || (chint >= 21 && chint <= 29) { // TODO 不可視ノーツと地雷もチェック
+			} else if (chint >= 11 && chint <= 19) || (chint >= 21 && chint <= 29) {
 				lnCh := strconv.Itoa(chint + 40)
 				if ongoingLNs[lnCh] != nil {
 					if obj.value36() == bmsFile.Header["lnobj"] {
 						ongoingLNs[lnCh] = nil
 					} else {
-						bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Normal note is in LN: %s(#%d,%d/%d) in %s(#%d,%d/%d)",
-							strings.ToUpper(obj.value36()), momentObjs[0].Measure, momentObjs[0].Position.Numerator, momentObjs[0].Position.Denominator,
-							strings.ToUpper(ongoingLNs[lnCh].value36()), ongoingLNs[lnCh].Measure, ongoingLNs[lnCh].Position.Numerator, ongoingLNs[lnCh].Position.Denominator))
+						bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Normal note is in LN: %s(#%03d %s %d/%d) in %s(#%03d %s %d/%d)",
+							strings.ToUpper(obj.value36()), momentObjs[0].Measure, lnCh, momentObjs[0].Position.Numerator, momentObjs[0].Position.Denominator,
+							strings.ToUpper(ongoingLNs[lnCh].value36()), ongoingLNs[lnCh].Measure, lnCh, ongoingLNs[lnCh].Position.Numerator, ongoingLNs[lnCh].Position.Denominator))
 					}
+				}
+			} else if obj.Channel[0] == 'd' || obj.Channel[0] == 'e' { // Mine
+				chint, _ := strconv.Atoi(obj.Channel[1:])
+				if obj.Channel[0] == 'd' {
+					chint += 50
+				} else {
+					chint += 60
+				}
+				lnCh := strconv.Itoa(chint)
+				if ongoingLNs[lnCh] != nil {
+					bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Mine note is in LN: %s(#%03d %s %d/%d) in %s(#%03d %s %d/%d)",
+						strings.ToUpper(obj.value36()), momentObjs[0].Measure, lnCh, momentObjs[0].Position.Numerator, momentObjs[0].Position.Denominator,
+						strings.ToUpper(ongoingLNs[lnCh].value36()), ongoingLNs[lnCh].Measure, lnCh, ongoingLNs[lnCh].Position.Numerator, ongoingLNs[lnCh].Position.Denominator))
 				}
 			}
 		}
