@@ -1040,7 +1040,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 		}
 	}
 
-	// Check end of LN exists
+	// Check end of LN exists and notes in LN
 	noteObjs := []bmsObj{}
 	for _, obj := range bmsFile.BmsWavObjs {
 		if matchChannel(obj.Channel, NOTE_CHANNELS) {
@@ -1202,7 +1202,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 	for i, bmsFile := range bmsDir.BmsFiles {
 		CheckBmsFile(&bmsDir.BmsFiles[i])
 
-		// Check defined files existance
+		// check defined files existance
 		imageCommands := []string{"stagefile", "banner", "backbmp"}
 		for _, command := range imageCommands {
 			val, ok := bmsFile.Header[command]
@@ -1239,18 +1239,19 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 		}
 	}
 
-	unityCommands := []string{"stagefile", "banner", "backbmp", "preview"}
-	isNotUnified := make([]bool, len(unityCommands))
-	values := make([][]string, len(unityCommands))
+	// check ununified definitions
+	unifyCommands := []string{"stagefile", "banner", "backbmp", "preview"}
+	isNotUnified := make([]bool, len(unifyCommands))
+	values := make([][]string, len(unifyCommands))
 	for i, bmsFile := range bmsDir.BmsFiles {
-		for j, uc := range unityCommands {
+		for j, uc := range unifyCommands {
 			values[j] = append(values[j], bmsFile.Header[uc])
 			if i > 0 && values[j][i-1] != bmsFile.Header[uc] {
 				isNotUnified[j] = true
 			}
 		}
 	}
-	for index, uc := range unityCommands {
+	for index, uc := range unifyCommands {
 		if isNotUnified[index] {
 			strs := []string{}
 			for j, bmsFile := range bmsDir.BmsFiles {
@@ -1261,6 +1262,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 		}
 	}
 
+	// check unused files and empty directories
 	isPreview := func(path string) bool {
 		for _, ext := range AUDIO_EXTS {
 			if regexp.MustCompile(`^preview.*` + ext + `$`).MatchString(relativePathFromBmsRoot(path)) {
@@ -1281,7 +1283,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 		}
 	}
 
-	// check filename (must do after used check)
+	// check environment-dependent filename (must do after used check)
 	filenameLog := func(path string) {
 		bmsDir.Logs.addNewLog(Warning, "This filename has environment-dependent characters: "+path)
 	}
