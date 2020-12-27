@@ -70,8 +70,12 @@ type indexedDefinition struct {
 	Value       string
 }
 
+func (id indexedDefinition) command() string {
+	return id.CommandName + id.Index
+}
+
 func (id indexedDefinition) equalCommand(command string) bool {
-	return command == id.CommandName+id.Index
+	return command == id.command()
 }
 
 type objType int
@@ -910,12 +914,12 @@ func CheckBmsFile(bmsFile *BmsFile) {
 		}
 		for _, def := range defs {
 			if def.Value == "" {
-				bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("#%s value is empty", strings.ToUpper(def.CommandName)))
+				bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("#%s value is empty", strings.ToUpper(def.command())))
 			} else if isInRange, err := INDEXED_COMMANDS[i].isInRange(def.Value); err != nil || !isInRange {
 				if err != nil {
 					bmsFile.Logs.addNewLog(Debug, "isInRange return error: "+def.Value)
 				}
-				bmsFile.Logs.addNewLog(Error, fmt.Sprintf("#%s has invalid value: %s", strings.ToUpper(def.CommandName), def.Value))
+				bmsFile.Logs.addNewLog(Error, fmt.Sprintf("#%s has invalid value: %s", strings.ToUpper(def.command()), def.Value))
 			} else if def.CommandName == "wav" && filepath.Ext(def.Value) != ".wav" {
 				hasNoWavExtDefs = append(hasNoWavExtDefs, def)
 			}
@@ -923,7 +927,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 	}
 	if len(hasNoWavExtDefs) > 0 {
 		bmsFile.Logs.addNewLog(Notice, fmt.Sprintf("#WAV definition has non-.wav extension(*%d): %s %s etc...",
-			len(hasNoWavExtDefs), strings.ToUpper(hasNoWavExtDefs[0].CommandName), hasNoWavExtDefs[0].Value))
+			len(hasNoWavExtDefs), strings.ToUpper(hasNoWavExtDefs[0].command()), hasNoWavExtDefs[0].Value))
 	}
 
 	if bmsFile.TotalNotes == 0 {
@@ -1222,7 +1226,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 		for _, def := range bmsFile.HeaderWav {
 			if def.Value != "" {
 				if !containsInNonBmsFiles(def.Value, AUDIO_EXTS) {
-					bmsDir.Logs.addNewLog(Error, noFileMessage(bmsFile.Path, def.CommandName, def.Value))
+					bmsDir.Logs.addNewLog(Error, noFileMessage(bmsFile.Path, def.command(), def.Value))
 				}
 			}
 		}
@@ -1233,7 +1237,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 					exts = MOVIE_EXTS
 				}
 				if !containsInNonBmsFiles(def.Value, exts) {
-					bmsDir.Logs.addNewLog(Error, noFileMessage(bmsFile.Path, def.CommandName, def.Value))
+					bmsDir.Logs.addNewLog(Error, noFileMessage(bmsFile.Path, def.command(), def.Value))
 				}
 			}
 		}
