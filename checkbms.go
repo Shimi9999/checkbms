@@ -210,7 +210,7 @@ func (bf *BmsFile) setIsLNEnd() {
 			continue
 		}
 		chint, _ := strconv.Atoi(bf.BmsWavObjs[i].Channel)
-		if bf.BmsWavObjs[i].value36() == bf.Header["lnobj"] {
+		if bf.BmsWavObjs[i].value36() == bf.lnobj() {
 			bf.BmsWavObjs[i].IsLNEnd = true
 			ongoingLNs[chint+40] = false
 		} else if matchChannel(bf.BmsWavObjs[i].Channel, LN_CHANNELS) {
@@ -222,6 +222,9 @@ func (bf *BmsFile) setIsLNEnd() {
 			}
 		}
 	}
+}
+func (bf BmsFile) lnobj() string {
+	return strings.ToLower(bf.Header["lnobj"])
 }
 func (bf BmsFile) LogString(base bool) string {
 	str := ""
@@ -820,7 +823,7 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 
 		if (chint >= 11 && chint <= 19) || (chint >= 21 && chint <= 29) ||
 			(chint >= 51 && chint <= 59) || (chint >= 61 && chint <= 69) {
-			if obj.value36() != bmsFile.Header["lnobj"] {
+			if obj.value36() != bmsFile.lnobj() {
 				if (chint >= 51 && chint <= 59) || (chint >= 61 && chint <= 69) {
 					lnCount++
 				} else {
@@ -985,7 +988,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 		}
 	}
 	checkDefinedObjIsUsed(Bmp, bmsFile.HeaderBmp, bmsFile.BmsBmpObjs, "00", "") // 00:misslayer
-	checkDefinedObjIsUsed(Wav, bmsFile.HeaderWav, bmsFile.BmsWavObjs, "00", strings.ToLower(bmsFile.Header["lnobj"]))
+	checkDefinedObjIsUsed(Wav, bmsFile.HeaderWav, bmsFile.BmsWavObjs, "00", bmsFile.lnobj())
 	checkDefinedObjIsUsed(Bpm, bmsFile.HeaderExtendedBpm, bmsFile.BmsExtendedBpmObjs, "", "")
 	checkDefinedObjIsUsed(Stop, bmsFile.HeaderStop, bmsFile.BmsStopObjs, "", "")
 	checkDefinedObjIsUsed(Scroll, bmsFile.HeaderScroll, bmsFile.BmsScrollObjs, "", "")
@@ -1078,7 +1081,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 			} else if (chint >= 11 && chint <= 19) || (chint >= 21 && chint <= 29) {
 				lnCh := strconv.Itoa(chint + 40)
 				if ongoingLNs[lnCh] != nil {
-					if obj.value36() == bmsFile.Header["lnobj"] {
+					if obj.value36() == bmsFile.lnobj() {
 						ongoingLNs[lnCh] = nil
 					} else {
 						bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Normal note is in LN: %s(#%03d %s %d/%d) in %s(#%03d %s %d/%d)",
@@ -1123,6 +1126,10 @@ func CheckBmsFile(bmsFile *BmsFile) {
 		momentCount++
 		ok := false
 		for _, momObj := range momentObjs {
+			if momObj.value36() == bmsFile.lnobj() {
+				ok = true
+				break
+			}
 			for _, wav := range bmsFile.HeaderWav {
 				if momObj.value36() == wav.Index {
 					ok = true
