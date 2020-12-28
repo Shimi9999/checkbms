@@ -3,6 +3,7 @@ package checkbms
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -128,6 +129,7 @@ type BmsFile struct {
 	BmsMeasureLengths  []measureLength
 	Keymode            int // 5, 7, 9, 10, 14, 24, 48
 	TotalNotes         int
+	Sha256             string
 	Logs               Logs
 }
 
@@ -773,6 +775,15 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 		return nil, fmt.Errorf("BMSfile scan error: " + scanner.Err().Error())
 	}
 
+	if _, err = file.Seek(0, 0); err != nil {
+		return nil, fmt.Errorf("BMSfile Seek error: " + err.Error())
+	}
+	fullFile, err := ioutil.ReadAll(file)
+	if err != nil {
+		return nil, fmt.Errorf("BMSfile ReadAll error: " + err.Error())
+	}
+	bmsFile.Sha256 = fmt.Sprintf("%x", sha256.Sum256(fullFile))
+
 	bmsFile.sortBmsObjs()
 	bmsFile.setIsLNEnd()
 
@@ -1308,6 +1319,15 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 		if file.Used && hasExts(file.Path, AUDIO_EXTS) {
 			if d, _ := audio.Duration(file.Path); d >= 60.0 {
 				bmsDir.Logs.addNewLog(Warning, fmt.Sprintf("This audio file is over 1 minute(%.1fsec): %s", d, relativePathFromBmsRoot(file.Path)))
+			}
+		}
+	}
+
+	// check pairs of bmsfiles with same hash
+	for i := 0; i < len(bmsDir.BmsFiles); i++ {
+		for j := i + 1; j < len(bmsDir.BmsFiles); j++ {
+			if bmsDir.BmsFiles[i].Sha256 == bmsDir.BmsFiles[j].Sha256 {
+				bmsDir.Logs.addNewLog(Warning, fmt.Sprintf("These bmsfiles are same: %s %s", bmsDir.BmsFiles[i].Path, bmsDir.BmsFiles[j].Path))
 			}
 		}
 	}
