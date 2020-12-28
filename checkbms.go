@@ -1050,7 +1050,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 				fp.reduce()
 				s := ""
 				for _, obj := range objs {
-					s += fmt.Sprintf("[%s]%s ", obj.Channel, strings.ToUpper(obj.value36()))
+					s += fmt.Sprintf("[%s]%s ", strings.ToUpper(obj.Channel), strings.ToUpper(obj.value36()))
 				}
 				bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Placed notes overlap(#%03d,%d/%d): %s",
 					objs[0].Measure, fp.Numerator, fp.Denominator, s))
