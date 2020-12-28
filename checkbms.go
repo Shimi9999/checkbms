@@ -1252,7 +1252,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 			if def.Value != "" {
 				exts := IMAGE_EXTS
 				if hasExts(def.Value, MOVIE_EXTS) {
-					exts = MOVIE_EXTS
+					exts = append(MOVIE_EXTS, IMAGE_EXTS...)
 				}
 				if !containsInNonBmsFiles(def.Value, exts) {
 					bmsDir.Logs.addNewLog(Error, noFileMessage(bmsFile.Path, def.command(), def.Value))
