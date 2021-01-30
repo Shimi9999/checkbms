@@ -1125,41 +1125,49 @@ func CheckBmsFile(bmsFile *BmsFile) {
 			strings.ToUpper(lnStart.value36()), lnStart.Measure, lnStart.Position.Numerator, lnStart.Position.Denominator))
 	}
 
-	// count no keysound moments
+	// count moments and notes without keysound
 	momentCount := 0
 	noWavMomentCount := 0
 	var noWavObjs []bmsObj
+	var noWavLnObjs []bmsObj
 	boi = newBmsObjsIterator(noteObjs)
 	for momentObjs := boi.next(); len(momentObjs) > 0; momentObjs = boi.next() {
 		momentCount++
-		ok := false
+		isNoKeysoundMoment := true
 		for _, momObj := range momentObjs {
+			isNoKeysoundNote := true
 			if momObj.value36() == bmsFile.lnobj() {
-				ok = true
-				break
-			}
-			for _, wav := range bmsFile.HeaderWav {
-				if momObj.value36() == wav.Index {
-					ok = true
-					break
+				isNoKeysoundNote = false
+				isNoKeysoundMoment = false
+			} else {
+				for _, wav := range bmsFile.HeaderWav {
+					if momObj.value36() == wav.Index {
+						isNoKeysoundNote = false
+						isNoKeysoundMoment = false
+						break
+					}
 				}
 			}
-			if ok {
-				break
+			if isNoKeysoundNote {
+				if matchChannel(momObj.Channel, LN_CHANNELS) {
+					noWavLnObjs = append(noWavLnObjs, momObj)
+				} else {
+					noWavObjs = append(noWavObjs, momObj)
+				}
 			}
 		}
-		if !ok {
+		if isNoKeysoundMoment {
 			noWavMomentCount++
-			noWavObjs = append(noWavObjs, momentObjs[0])
 		}
 	}
-	if len(noWavObjs) > 0 {
-		bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("No keysound moment exists: %.1f%%(%d/%d)",
+	if noWavMomentCount > 0 {
+		bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Moments without keysound exist: %.1f%%(%d/%d)",
 			float64(noWavMomentCount)/float64(momentCount)*100, noWavMomentCount, momentCount))
-		/*for _, obj := range noWavObjs {
-			fmt.Printf("#%d %d/%d, ", obj.Measure, obj.Position.Numerator, obj.Position.Denominator)
-		}
-		fmt.Printf("\n")*/
+	}
+	if len(noWavObjs)+len(noWavLnObjs) > 0 {
+		fmt.Println(len(noWavObjs), len(noWavLnObjs))
+		bmsFile.Logs.addNewLog(Notice, fmt.Sprintf("Notes without keysound exist: %.1f%%(%d/%d)",
+			float64(len(noWavObjs)+len(noWavLnObjs)/2)/float64(bmsFile.TotalNotes)*100, len(noWavObjs)+len(noWavLnObjs)/2, bmsFile.TotalNotes))
 	}
 
 	// check bpm value
