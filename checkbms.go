@@ -1127,51 +1127,6 @@ func CheckBmsFile(bmsFile *BmsFile) {
 			strings.ToUpper(lnStart.value36()), lnStart.Measure, lnStart.Position.Numerator, lnStart.Position.Denominator))
 	}
 
-	// count moments and notes without keysound
-	momentCount := 0
-	noWavMomentCount := 0
-	var noWavObjs []bmsObj
-	var noWavLnObjs []bmsObj
-	boi = newBmsObjsIterator(noteObjs)
-	for momentObjs := boi.next(); len(momentObjs) > 0; momentObjs = boi.next() {
-		momentCount++
-		isNoKeysoundMoment := true
-		for _, momObj := range momentObjs {
-			isNoKeysoundNote := true
-			if momObj.value36() == bmsFile.lnobj() {
-				isNoKeysoundNote = false
-				isNoKeysoundMoment = false
-			} else {
-				for _, wav := range bmsFile.HeaderWav {
-					if momObj.value36() == wav.Index {
-						isNoKeysoundNote = false
-						isNoKeysoundMoment = false
-						break
-					}
-				}
-			}
-			if isNoKeysoundNote {
-				if matchChannel(momObj.Channel, LN_CHANNELS) {
-					noWavLnObjs = append(noWavLnObjs, momObj)
-				} else {
-					noWavObjs = append(noWavObjs, momObj)
-				}
-			}
-		}
-		if isNoKeysoundMoment {
-			noWavMomentCount++
-		}
-	}
-	if noWavMomentCount > 0 {
-		bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Moments without keysound exist: %.1f%%(%d/%d)",
-			float64(noWavMomentCount)/float64(momentCount)*100, noWavMomentCount, momentCount))
-	}
-	if len(noWavObjs)+len(noWavLnObjs) > 0 {
-		fmt.Println(len(noWavObjs), len(noWavLnObjs))
-		bmsFile.Logs.addNewLog(Notice, fmt.Sprintf("Notes without keysound exist: %.1f%%(%d/%d)",
-			float64(len(noWavObjs)+len(noWavLnObjs)/2)/float64(bmsFile.TotalNotes)*100, len(noWavObjs)+len(noWavLnObjs)/2, bmsFile.TotalNotes))
-	}
-
 	// check bpm value
 	for _, obj := range bmsFile.BmsBpmObjs {
 		_, err := strconv.ParseInt(obj.value36(), 16, 64)
@@ -1199,6 +1154,76 @@ func CheckBmsFile(bmsFile *BmsFile) {
 			}
 			duplicateMeasureLength = []measureLength{}
 		}
+	}
+
+	// count moments and notes without keysound
+	checkWithoutKeysound(bmsFile, nil)
+}
+
+// 実在しないファイル名を持つWAV定義を考慮する場合、wavFileIsExistを渡す。そうでなければnilを渡す。
+func checkWithoutKeysound(bmsFile *BmsFile, wavFileIsExist func(string) bool) {
+	noteObjs := []bmsObj{}
+	for _, obj := range bmsFile.BmsWavObjs {
+		if matchChannel(obj.Channel, NOTE_CHANNELS) {
+			noteObjs = append(noteObjs, obj)
+		}
+	}
+
+	momentCount := 0
+	noWavMomentCount := 0
+	var noWavObjs []bmsObj
+	var noWavLnObjs []bmsObj
+	doNotExistWavIsPlaced := false
+	boi := newBmsObjsIterator(noteObjs)
+	for momentObjs := boi.next(); len(momentObjs) > 0; momentObjs = boi.next() {
+		momentCount++
+		isNoKeysoundMoment := true
+		for _, momObj := range momentObjs {
+			isNoKeysoundNote := true
+			if momObj.value36() == bmsFile.lnobj() {
+				isNoKeysoundNote = false
+				isNoKeysoundMoment = false
+			} else {
+				for _, wav := range bmsFile.HeaderWav {
+					if momObj.value36() == wav.Index && (wavFileIsExist == nil || (wavFileIsExist != nil && wavFileIsExist(wav.Value))) {
+						isNoKeysoundNote = false
+						isNoKeysoundMoment = false
+						break
+					}
+					if momObj.value36() == wav.Index && (wavFileIsExist != nil && !wavFileIsExist(wav.Value)) {
+						doNotExistWavIsPlaced = true
+					}
+				}
+			}
+			if isNoKeysoundNote {
+				if matchChannel(momObj.Channel, LN_CHANNELS) {
+					noWavLnObjs = append(noWavLnObjs, momObj)
+				} else {
+					noWavObjs = append(noWavObjs, momObj)
+				}
+			}
+		}
+		if isNoKeysoundMoment {
+			noWavMomentCount++
+		}
+	}
+
+	// 実在しないWAVファイルの定義はあるが、その定義が配置されていない場合は、実在しないWAV定義が無い(or考慮しない)場合と結果が変わらないので、ログを出す意味が無い
+	if wavFileIsExist != nil && !doNotExistWavIsPlaced {
+		return
+	}
+
+	audioText := ""
+	if wavFileIsExist != nil {
+		audioText = " (or audio file)"
+	}
+	if noWavMomentCount > 0 {
+		bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Moments without keysound%s exist: %.1f%%(%d/%d)",
+			audioText, float64(noWavMomentCount)/float64(momentCount)*100, noWavMomentCount, momentCount))
+	}
+	if len(noWavObjs)+len(noWavLnObjs) > 0 {
+		bmsFile.Logs.addNewLog(Notice, fmt.Sprintf("Notes without keysound%s exist: %.1f%%(%d/%d)",
+			audioText, float64(len(noWavObjs)+len(noWavLnObjs)/2)/float64(bmsFile.TotalNotes)*100, len(noWavObjs)+len(noWavLnObjs)/2, bmsFile.TotalNotes))
 	}
 }
 
@@ -1259,10 +1284,12 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 			}
 		}
 
+		pathsOfdoNotExistWavs := []string{}
 		for _, def := range bmsFile.HeaderWav {
 			if def.Value != "" {
 				if !containsInNonBmsFiles(def.Value, AUDIO_EXTS) {
 					bmsDir.Logs.addNewLog(Error, noFileMessage(bmsFile.Path, def.command(), def.Value))
+					pathsOfdoNotExistWavs = append(pathsOfdoNotExistWavs, def.Value)
 				}
 			}
 		}
@@ -1276,6 +1303,19 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 					bmsDir.Logs.addNewLog(Error, noFileMessage(bmsFile.Path, def.command(), def.Value))
 				}
 			}
+		}
+
+		// count moments and notes without keysound (or audio file)
+		if len(pathsOfdoNotExistWavs) > 0 {
+			wavFileIsExist := func(path string) bool {
+				for _, pathOfdoNotExistWav := range pathsOfdoNotExistWavs {
+					if path == pathOfdoNotExistWav {
+						return false
+					}
+				}
+				return true
+			}
+			checkWithoutKeysound(&bmsDir.BmsFiles[i], wavFileIsExist)
 		}
 	}
 
