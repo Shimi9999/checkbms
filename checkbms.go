@@ -980,13 +980,15 @@ func CheckBmsFile(bmsFile *BmsFile) {
 					break
 				}
 			}
-			sort.Slice(undefinedObjs, func(i, j int) bool {
-				ii, _ := strconv.ParseInt(undefinedObjs[i], 36, 32)
-				ij, _ := strconv.ParseInt(undefinedObjs[j], 36, 32)
-				return ii < ij
-			})
-			bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Placed %s object is undefined: %s",
-				t.string(), strings.ToUpper(strings.Join(undefinedObjs, ","))))
+			if len(undefinedObjs) > 0 {
+				sort.Slice(undefinedObjs, func(i, j int) bool {
+					ii, _ := strconv.ParseInt(undefinedObjs[i], 36, 32)
+					ij, _ := strconv.ParseInt(undefinedObjs[j], 36, 32)
+					return ii < ij
+				})
+				bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Placed %s object is undefined: %s",
+					t.string(), strings.ToUpper(strings.Join(undefinedObjs, ","))))
+			}
 		}
 		for _, def := range definitions {
 			if !usedObjs[def.Index] && def.Index != ignoreDef {
