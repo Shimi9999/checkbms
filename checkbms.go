@@ -852,6 +852,7 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 }
 
 func CheckBmsFile(bmsFile *BmsFile) {
+	// Check headercommands
 	for _, command := range COMMANDS {
 		val, ok := bmsFile.Header[command.Name]
 		if !ok {
@@ -905,45 +906,51 @@ func CheckBmsFile(bmsFile *BmsFile) {
 		}
 	}
 
-	title, ok1 := bmsFile.Header["title"]
-	subtitle, ok2 := bmsFile.Header["subtitle"]
-	if ok1 && ok2 && subtitle != "" {
-		if strings.HasSuffix(title, subtitle) {
-			bmsFile.Logs.addNewLog(Warning, "#TITLE and #SUBTITLE have same text: "+subtitle)
+	// Check title and subtitle have same text
+	func() {
+		title, ok1 := bmsFile.Header["title"]
+		subtitle, ok2 := bmsFile.Header["subtitle"]
+		if ok1 && ok2 && subtitle != "" {
+			if strings.HasSuffix(title, subtitle) {
+				bmsFile.Logs.addNewLog(Warning, "#TITLE and #SUBTITLE have same text: "+subtitle)
+			}
 		}
-	}
+	}()
 
 	// Check invalid value of indexed commands
-	headerIndexedDefinitions := [][]indexedDefinition{bmsFile.HeaderWav, bmsFile.HeaderBmp, bmsFile.HeaderExtendedBpm, bmsFile.HeaderStop, bmsFile.HeaderScroll}
-	hasNoWavExtDefs := []indexedDefinition{}
-	for i, defs := range headerIndexedDefinitions {
-		if len(defs) == 0 {
-			if INDEXED_COMMANDS[i].Necessity != Unnecessary {
-				alertLevel := Error
-				if INDEXED_COMMANDS[i].Necessity == Semi_necessary {
-					alertLevel = Warning
+	func() {
+		headerIndexedDefinitions := [][]indexedDefinition{bmsFile.HeaderWav, bmsFile.HeaderBmp, bmsFile.HeaderExtendedBpm, bmsFile.HeaderStop, bmsFile.HeaderScroll}
+		hasNoWavExtDefs := []indexedDefinition{}
+		for i, defs := range headerIndexedDefinitions {
+			if len(defs) == 0 {
+				if INDEXED_COMMANDS[i].Necessity != Unnecessary {
+					alertLevel := Error
+					if INDEXED_COMMANDS[i].Necessity == Semi_necessary {
+						alertLevel = Warning
+					}
+					bmsFile.Logs.addNewLog(alertLevel, fmt.Sprintf("#%sxx definition is missing", strings.ToUpper(INDEXED_COMMANDS[i].Name)))
 				}
-				bmsFile.Logs.addNewLog(alertLevel, fmt.Sprintf("#%sxx definition is missing", strings.ToUpper(INDEXED_COMMANDS[i].Name)))
+			}
+			for _, def := range defs {
+				if def.Value == "" {
+					bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("#%s value is empty", strings.ToUpper(def.command())))
+				} else if isInRange, err := INDEXED_COMMANDS[i].isInRange(def.Value); err != nil || !isInRange {
+					if err != nil {
+						bmsFile.Logs.addNewLog(Debug, "isInRange return error: "+def.Value)
+					}
+					bmsFile.Logs.addNewLog(Error, fmt.Sprintf("#%s has invalid value: %s", strings.ToUpper(def.command()), def.Value))
+				} else if def.CommandName == "wav" && filepath.Ext(def.Value) != ".wav" {
+					hasNoWavExtDefs = append(hasNoWavExtDefs, def)
+				}
 			}
 		}
-		for _, def := range defs {
-			if def.Value == "" {
-				bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("#%s value is empty", strings.ToUpper(def.command())))
-			} else if isInRange, err := INDEXED_COMMANDS[i].isInRange(def.Value); err != nil || !isInRange {
-				if err != nil {
-					bmsFile.Logs.addNewLog(Debug, "isInRange return error: "+def.Value)
-				}
-				bmsFile.Logs.addNewLog(Error, fmt.Sprintf("#%s has invalid value: %s", strings.ToUpper(def.command()), def.Value))
-			} else if def.CommandName == "wav" && filepath.Ext(def.Value) != ".wav" {
-				hasNoWavExtDefs = append(hasNoWavExtDefs, def)
-			}
+		if len(hasNoWavExtDefs) > 0 {
+			bmsFile.Logs.addNewLog(Notice, fmt.Sprintf("#WAV definition has non-.wav extension(*%d): %s %s etc...",
+				len(hasNoWavExtDefs), strings.ToUpper(hasNoWavExtDefs[0].command()), hasNoWavExtDefs[0].Value))
 		}
-	}
-	if len(hasNoWavExtDefs) > 0 {
-		bmsFile.Logs.addNewLog(Notice, fmt.Sprintf("#WAV definition has non-.wav extension(*%d): %s %s etc...",
-			len(hasNoWavExtDefs), strings.ToUpper(hasNoWavExtDefs[0].command()), hasNoWavExtDefs[0].Value))
-	}
+	}()
 
+	// Check totalnotes is 0
 	if bmsFile.TotalNotes == 0 {
 		bmsFile.Logs.addNewLog(Error, "TotalNotes is 0")
 	}
@@ -959,202 +966,216 @@ func CheckBmsFile(bmsFile *BmsFile) {
 	}
 
 	// Check defined header is used, and placed obj is undefined
-	checkDefinedObjIsUsed := func(t objType, definitions []indexedDefinition, objs []bmsObj, ignoreDef string, ignoreObj string) {
-		usedObjs := map[string]bool{}
-		for _, def := range definitions {
-			usedObjs[def.Index] = false
-		}
-		undefinedObjs := []string{}
-		for _, obj := range objs {
-			if _, ok := usedObjs[obj.value36()]; ok {
-				usedObjs[obj.value36()] = true
-			} else {
-				undefinedObjs = append(undefinedObjs, obj.value36())
+	func() {
+		checkDefinedObjIsUsed := func(t objType, definitions []indexedDefinition, objs []bmsObj, ignoreDef string, ignoreObj string) {
+			usedObjs := map[string]bool{}
+			for _, def := range definitions {
+				usedObjs[def.Index] = false
 			}
-		}
-		if len(undefinedObjs) > 0 {
-			undefinedObjs = removeDuplicate(undefinedObjs)
-			for i, obj := range undefinedObjs {
-				if obj == ignoreObj {
-					undefinedObjs = append(undefinedObjs[:i], undefinedObjs[i+1:]...)
-					break
+			undefinedObjs := []string{}
+			for _, obj := range objs {
+				if _, ok := usedObjs[obj.value36()]; ok {
+					usedObjs[obj.value36()] = true
+				} else {
+					undefinedObjs = append(undefinedObjs, obj.value36())
 				}
 			}
 			if len(undefinedObjs) > 0 {
-				sort.Slice(undefinedObjs, func(i, j int) bool {
-					ii, _ := strconv.ParseInt(undefinedObjs[i], 36, 32)
-					ij, _ := strconv.ParseInt(undefinedObjs[j], 36, 32)
-					return ii < ij
-				})
-				bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Placed %s object is undefined: %s",
-					t.string(), strings.ToUpper(strings.Join(undefinedObjs, ","))))
+				undefinedObjs = removeDuplicate(undefinedObjs)
+				for i, obj := range undefinedObjs {
+					if obj == ignoreObj {
+						undefinedObjs = append(undefinedObjs[:i], undefinedObjs[i+1:]...)
+						break
+					}
+				}
+				if len(undefinedObjs) > 0 {
+					sort.Slice(undefinedObjs, func(i, j int) bool {
+						ii, _ := strconv.ParseInt(undefinedObjs[i], 36, 32)
+						ij, _ := strconv.ParseInt(undefinedObjs[j], 36, 32)
+						return ii < ij
+					})
+					bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Placed %s object is undefined: %s",
+						t.string(), strings.ToUpper(strings.Join(undefinedObjs, ","))))
+				}
+			}
+			for _, def := range definitions {
+				if !usedObjs[def.Index] && def.Index != ignoreDef {
+					bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Defined %s object is not used: %s(%s)",
+						t.string(), strings.ToUpper(def.Index), def.Value))
+				}
 			}
 		}
-		for _, def := range definitions {
-			if !usedObjs[def.Index] && def.Index != ignoreDef {
-				bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Defined %s object is not used: %s(%s)",
-					t.string(), strings.ToUpper(def.Index), def.Value))
-			}
-		}
-	}
-	checkDefinedObjIsUsed(Bmp, bmsFile.HeaderBmp, bmsFile.BmsBmpObjs, "00", "") // 00:misslayer
-	checkDefinedObjIsUsed(Wav, bmsFile.HeaderWav, bmsFile.BmsWavObjs, "00", bmsFile.lnobj())
-	checkDefinedObjIsUsed(Bpm, bmsFile.HeaderExtendedBpm, bmsFile.BmsExtendedBpmObjs, "", "")
-	checkDefinedObjIsUsed(Stop, bmsFile.HeaderStop, bmsFile.BmsStopObjs, "", "")
-	checkDefinedObjIsUsed(Scroll, bmsFile.HeaderScroll, bmsFile.BmsScrollObjs, "", "")
+		checkDefinedObjIsUsed(Bmp, bmsFile.HeaderBmp, bmsFile.BmsBmpObjs, "00", "") // 00:misslayer
+		checkDefinedObjIsUsed(Wav, bmsFile.HeaderWav, bmsFile.BmsWavObjs, "00", bmsFile.lnobj())
+		checkDefinedObjIsUsed(Bpm, bmsFile.HeaderExtendedBpm, bmsFile.BmsExtendedBpmObjs, "", "")
+		checkDefinedObjIsUsed(Stop, bmsFile.HeaderStop, bmsFile.BmsStopObjs, "", "")
+		checkDefinedObjIsUsed(Scroll, bmsFile.HeaderScroll, bmsFile.BmsScrollObjs, "", "")
+	}()
 
 	// check sound of mine explosion is used
-	for _, def := range bmsFile.HeaderWav {
-		if def.Index == "00" && len(bmsFile.BmsMineObjs) == 0 {
-			bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Defined mine explision wav(#WAV00) is not used: %s", def.Value))
+	func() {
+		for _, def := range bmsFile.HeaderWav {
+			if def.Index == "00" && len(bmsFile.BmsMineObjs) == 0 {
+				bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Defined mine explision wav(#WAV00) is not used: %s", def.Value))
+			}
 		}
-	}
+	}()
 
 	// Check WAV duplicate
-	boi := newBmsObjsIterator(bmsFile.BmsWavObjs)
-	for momentObjs := boi.next(); len(momentObjs) > 0; momentObjs = boi.next() {
-		duplicates := []string{}
-		objCounts := map[string]int{}
-		for _, obj := range momentObjs {
-			if bmsFile.definedValue(Wav, strings.ToUpper(obj.value36())) == "" {
-				continue
+	func() {
+		boi := newBmsObjsIterator(bmsFile.BmsWavObjs)
+		for momentObjs := boi.next(); len(momentObjs) > 0; momentObjs = boi.next() {
+			duplicates := []string{}
+			objCounts := map[string]int{}
+			for _, obj := range momentObjs {
+				if bmsFile.definedValue(Wav, strings.ToUpper(obj.value36())) == "" {
+					continue
+				}
+				if objCounts[obj.value36()] == 1 {
+					duplicates = append(duplicates, obj.value36())
+				}
+				objCounts[obj.value36()]++
 			}
-			if objCounts[obj.value36()] == 1 {
-				duplicates = append(duplicates, obj.value36())
+			if len(duplicates) > 0 {
+				fp := fraction{momentObjs[0].Position.Numerator, momentObjs[0].Position.Denominator}
+				fp.reduce()
+				for _, dup := range duplicates {
+					bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Placed WAV objects are duplicate(#%03d,%d/%d): %s (%s) * %d",
+						momentObjs[0].Measure, fp.Numerator, fp.Denominator, strings.ToUpper(dup), bmsFile.definedValue(Wav, strings.ToUpper(dup)), objCounts[dup]))
+				}
 			}
-			objCounts[obj.value36()]++
 		}
-		if len(duplicates) > 0 {
-			fp := fraction{momentObjs[0].Position.Numerator, momentObjs[0].Position.Denominator}
-			fp.reduce()
-			for _, dup := range duplicates {
-				bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Placed WAV objects are duplicate(#%03d,%d/%d): %s (%s) * %d",
-					momentObjs[0].Measure, fp.Numerator, fp.Denominator, strings.ToUpper(dup), bmsFile.definedValue(Wav, strings.ToUpper(dup)), objCounts[dup]))
-			}
-		}
-	}
+	}()
 
 	// check note overlap
-	notBgmWavObjs := []bmsObj{}
-	for _, obj := range bmsFile.BmsWavObjs {
-		if obj.Channel != "01" {
-			notBgmWavObjs = append(notBgmWavObjs, obj)
-		}
-	}
-	allNotes := append(notBgmWavObjs, bmsFile.BmsMineObjs...)
-	sort.Slice(allNotes, func(i, j int) bool { return allNotes[i].time() < allNotes[j].time() })
-	boi = newBmsObjsIterator(allNotes) // TODO イテレータ内でソートすべき？
-	for momentObjs := boi.next(); len(momentObjs) > 0; momentObjs = boi.next() {
-		laneObjs := make([][]bmsObj, 20)
-		for _, obj := range momentObjs {
-			lane, _ := strconv.Atoi(obj.Channel[1:2])
-			switch obj.Channel[:1] {
-			case "2", "4", "6", "e":
-				lane += 10
+	func() {
+		notBgmWavObjs := []bmsObj{}
+		for _, obj := range bmsFile.BmsWavObjs {
+			if obj.Channel != "01" {
+				notBgmWavObjs = append(notBgmWavObjs, obj)
 			}
-			laneObjs[lane] = append(laneObjs[lane], obj)
 		}
-		for _, objs := range laneObjs {
-			if len(objs) > 1 {
-				fp := fraction{objs[0].Position.Numerator, objs[0].Position.Denominator}
-				fp.reduce()
-				s := ""
-				for _, obj := range objs {
-					s += fmt.Sprintf("[%s]%s ", strings.ToUpper(obj.Channel), strings.ToUpper(obj.value36()))
+		allNotes := append(notBgmWavObjs, bmsFile.BmsMineObjs...)
+		sort.Slice(allNotes, func(i, j int) bool { return allNotes[i].time() < allNotes[j].time() })
+		boi := newBmsObjsIterator(allNotes) // TODO イテレータ内でソートすべき？
+		for momentObjs := boi.next(); len(momentObjs) > 0; momentObjs = boi.next() {
+			laneObjs := make([][]bmsObj, 20)
+			for _, obj := range momentObjs {
+				lane, _ := strconv.Atoi(obj.Channel[1:2])
+				switch obj.Channel[:1] {
+				case "2", "4", "6", "e":
+					lane += 10
 				}
-				bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Placed notes overlap(#%03d,%d/%d): %s",
-					objs[0].Measure, fp.Numerator, fp.Denominator, s))
+				laneObjs[lane] = append(laneObjs[lane], obj)
+			}
+			for _, objs := range laneObjs {
+				if len(objs) > 1 {
+					fp := fraction{objs[0].Position.Numerator, objs[0].Position.Denominator}
+					fp.reduce()
+					s := ""
+					for _, obj := range objs {
+						s += fmt.Sprintf("[%s]%s ", strings.ToUpper(obj.Channel), strings.ToUpper(obj.value36()))
+					}
+					bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Placed notes overlap(#%03d,%d/%d): %s",
+						objs[0].Measure, fp.Numerator, fp.Denominator, s))
+				}
 			}
 		}
-	}
+	}()
 
 	// Check end of LN exists and notes in LN
-	noteObjs := []bmsObj{}
-	for _, obj := range bmsFile.BmsWavObjs {
-		if matchChannel(obj.Channel, NOTE_CHANNELS) {
-			noteObjs = append(noteObjs, obj)
+	func() {
+		noteObjs := []bmsObj{}
+		for _, obj := range bmsFile.BmsWavObjs {
+			if matchChannel(obj.Channel, NOTE_CHANNELS) {
+				noteObjs = append(noteObjs, obj)
+			}
 		}
-	}
-	ongoingLNs := map[string]*bmsObj{}
-	nmObjs := append(noteObjs, bmsFile.BmsMineObjs...)
-	sort.Slice(nmObjs, func(i, j int) bool { return nmObjs[i].time() < nmObjs[j].time() })
-	boi = newBmsObjsIterator(nmObjs)
-	for momentObjs := boi.next(); len(momentObjs) > 0; momentObjs = boi.next() {
-		for _, obj := range momentObjs {
-			chint, _ := strconv.Atoi(obj.Channel)
-			if (chint >= 51 && chint <= 59) || (chint >= 61 && chint <= 69) {
-				if ongoingLNs[obj.Channel] == nil {
-					ongoingLNs[obj.Channel] = &obj
-				} else {
-					ongoingLNs[obj.Channel] = nil
-				}
-			} else if (chint >= 11 && chint <= 19) || (chint >= 21 && chint <= 29) {
-				lnCh := strconv.Itoa(chint + 40)
-				if ongoingLNs[lnCh] != nil {
-					if obj.value36() == bmsFile.lnobj() {
-						ongoingLNs[lnCh] = nil
+		ongoingLNs := map[string]*bmsObj{}
+		nmObjs := append(noteObjs, bmsFile.BmsMineObjs...)
+		sort.Slice(nmObjs, func(i, j int) bool { return nmObjs[i].time() < nmObjs[j].time() })
+		boi := newBmsObjsIterator(nmObjs)
+		for momentObjs := boi.next(); len(momentObjs) > 0; momentObjs = boi.next() {
+			for _, obj := range momentObjs {
+				chint, _ := strconv.Atoi(obj.Channel)
+				if (chint >= 51 && chint <= 59) || (chint >= 61 && chint <= 69) {
+					if ongoingLNs[obj.Channel] == nil {
+						ongoingLNs[obj.Channel] = &obj
 					} else {
-						bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Normal note is in LN: %s(#%03d %s %d/%d) in %s(#%03d %s %d/%d)",
+						ongoingLNs[obj.Channel] = nil
+					}
+				} else if (chint >= 11 && chint <= 19) || (chint >= 21 && chint <= 29) {
+					lnCh := strconv.Itoa(chint + 40)
+					if ongoingLNs[lnCh] != nil {
+						if obj.value36() == bmsFile.lnobj() {
+							ongoingLNs[lnCh] = nil
+						} else {
+							bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Normal note is in LN: %s(#%03d %s %d/%d) in %s(#%03d %s %d/%d)",
+								strings.ToUpper(obj.value36()), momentObjs[0].Measure, lnCh, momentObjs[0].Position.Numerator, momentObjs[0].Position.Denominator,
+								strings.ToUpper(ongoingLNs[lnCh].value36()), ongoingLNs[lnCh].Measure, lnCh, ongoingLNs[lnCh].Position.Numerator, ongoingLNs[lnCh].Position.Denominator))
+						}
+					}
+				} else if obj.Channel[0] == 'd' || obj.Channel[0] == 'e' { // Mine
+					chint, _ := strconv.Atoi(obj.Channel[1:])
+					if obj.Channel[0] == 'd' {
+						chint += 50
+					} else {
+						chint += 60
+					}
+					lnCh := strconv.Itoa(chint)
+					if ongoingLNs[lnCh] != nil {
+						bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Mine note is in LN: %s(#%03d %s %d/%d) in %s(#%03d %s %d/%d)",
 							strings.ToUpper(obj.value36()), momentObjs[0].Measure, lnCh, momentObjs[0].Position.Numerator, momentObjs[0].Position.Denominator,
 							strings.ToUpper(ongoingLNs[lnCh].value36()), ongoingLNs[lnCh].Measure, lnCh, ongoingLNs[lnCh].Position.Numerator, ongoingLNs[lnCh].Position.Denominator))
 					}
 				}
-			} else if obj.Channel[0] == 'd' || obj.Channel[0] == 'e' { // Mine
-				chint, _ := strconv.Atoi(obj.Channel[1:])
-				if obj.Channel[0] == 'd' {
-					chint += 50
-				} else {
-					chint += 60
-				}
-				lnCh := strconv.Itoa(chint)
-				if ongoingLNs[lnCh] != nil {
-					bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Mine note is in LN: %s(#%03d %s %d/%d) in %s(#%03d %s %d/%d)",
-						strings.ToUpper(obj.value36()), momentObjs[0].Measure, lnCh, momentObjs[0].Position.Numerator, momentObjs[0].Position.Denominator,
-						strings.ToUpper(ongoingLNs[lnCh].value36()), ongoingLNs[lnCh].Measure, lnCh, ongoingLNs[lnCh].Position.Numerator, ongoingLNs[lnCh].Position.Denominator))
-				}
 			}
 		}
-	}
-	ongoingLNsSlice := []*bmsObj{}
-	for _, ln := range ongoingLNs {
-		if ln != nil {
-			ongoingLNsSlice = append(ongoingLNsSlice, ln)
+		ongoingLNsSlice := []*bmsObj{}
+		for _, ln := range ongoingLNs {
+			if ln != nil {
+				ongoingLNsSlice = append(ongoingLNsSlice, ln)
+			}
 		}
-	}
-	sort.Slice(ongoingLNsSlice, func(i, j int) bool { return ongoingLNsSlice[i].time() < ongoingLNsSlice[j].time() })
-	for _, lnStart := range ongoingLNsSlice {
-		bmsFile.Logs.addNewLog(Error, fmt.Sprintf("LN is not finished: %s(#%d,%d/%d)",
-			strings.ToUpper(lnStart.value36()), lnStart.Measure, lnStart.Position.Numerator, lnStart.Position.Denominator))
-	}
+		sort.Slice(ongoingLNsSlice, func(i, j int) bool { return ongoingLNsSlice[i].time() < ongoingLNsSlice[j].time() })
+		for _, lnStart := range ongoingLNsSlice {
+			bmsFile.Logs.addNewLog(Error, fmt.Sprintf("LN is not finished: %s(#%d,%d/%d)",
+				strings.ToUpper(lnStart.value36()), lnStart.Measure, lnStart.Position.Numerator, lnStart.Position.Denominator))
+		}
+	}()
 
 	// check bpm value
-	for _, obj := range bmsFile.BmsBpmObjs {
-		_, err := strconv.ParseInt(obj.value36(), 16, 64)
-		if err != nil {
-			bmsFile.Logs.addNewLog(Error, fmt.Sprintf("BPM object has invalid value: %s",
-				fmt.Sprintf("#%03d (%d/%d) %s",
-					obj.Measure, obj.Position.Numerator, obj.Position.Denominator, strings.ToUpper(obj.value36()))))
+	func() {
+		for _, obj := range bmsFile.BmsBpmObjs {
+			_, err := strconv.ParseInt(obj.value36(), 16, 64)
+			if err != nil {
+				bmsFile.Logs.addNewLog(Error, fmt.Sprintf("BPM object has invalid value: %s",
+					fmt.Sprintf("#%03d (%d/%d) %s",
+						obj.Measure, obj.Position.Numerator, obj.Position.Denominator, strings.ToUpper(obj.value36()))))
+			}
 		}
-	}
+	}()
 
 	// check measure length
-	duplicateMeasureLength := []measureLength{}
-	for i, mlen := range bmsFile.BmsMeasureLengths {
-		if mlen.length() <= 0 {
-			bmsFile.Logs.addNewLog(Error, fmt.Sprintf("#%03d measure length has invalid value: %s", mlen.Measure, mlen.LengthStr))
-		}
-		duplicateMeasureLength = append(duplicateMeasureLength, mlen)
-		if i == len(bmsFile.BmsMeasureLengths)-1 || mlen.Measure != bmsFile.BmsMeasureLengths[i+1].Measure {
-			if len(duplicateMeasureLength) > 1 {
-				lens := duplicateMeasureLength[0].LengthStr
-				for j := 1; j < len(duplicateMeasureLength); j++ {
-					lens += ", " + duplicateMeasureLength[j].LengthStr
-				}
-				bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("#%03d measure length is duplicate: %s", mlen.Measure, lens))
+	func() {
+		duplicateMeasureLength := []measureLength{}
+		for i, mlen := range bmsFile.BmsMeasureLengths {
+			if mlen.length() <= 0 {
+				bmsFile.Logs.addNewLog(Error, fmt.Sprintf("#%03d measure length has invalid value: %s", mlen.Measure, mlen.LengthStr))
 			}
-			duplicateMeasureLength = []measureLength{}
+			duplicateMeasureLength = append(duplicateMeasureLength, mlen)
+			if i == len(bmsFile.BmsMeasureLengths)-1 || mlen.Measure != bmsFile.BmsMeasureLengths[i+1].Measure {
+				if len(duplicateMeasureLength) > 1 {
+					lens := duplicateMeasureLength[0].LengthStr
+					for j := 1; j < len(duplicateMeasureLength); j++ {
+						lens += ", " + duplicateMeasureLength[j].LengthStr
+					}
+					bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("#%03d measure length is duplicate: %s", mlen.Measure, lens))
+				}
+				duplicateMeasureLength = []measureLength{}
+			}
 		}
-	}
+	}()
 
 	// count moments and notes without keysound
 	checkWithoutKeysound(bmsFile, nil)
@@ -1263,6 +1284,14 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 		return fmt.Sprintf("Defined file does not exist(%s): #%s %s",
 			relativePathFromBmsRoot(path), strings.ToUpper(command), value)
 	}
+	isPreview := func(path string) bool {
+		for _, ext := range AUDIO_EXTS {
+			if regexp.MustCompile(`^preview.*` + ext + `$`).MatchString(relativePathFromBmsRoot(path)) {
+				return true
+			}
+		}
+		return false
+	}
 
 	for i, bmsFile := range bmsDir.BmsFiles {
 		CheckBmsFile(&bmsDir.BmsFiles[i])
@@ -1320,64 +1349,62 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 	}
 
 	// check ununified definitions
-	unifyCommands := []string{"stagefile", "banner", "backbmp", "preview"}
-	isNotUnified := make([]bool, len(unifyCommands))
-	values := make([][]string, len(unifyCommands))
-	for i, bmsFile := range bmsDir.BmsFiles {
-		for j, uc := range unifyCommands {
-			values[j] = append(values[j], bmsFile.Header[uc])
-			if i > 0 && values[j][i-1] != bmsFile.Header[uc] {
-				isNotUnified[j] = true
+	func() {
+		unifyCommands := []string{"stagefile", "banner", "backbmp", "preview"}
+		isNotUnified := make([]bool, len(unifyCommands))
+		values := make([][]string, len(unifyCommands))
+		for i, bmsFile := range bmsDir.BmsFiles {
+			for j, uc := range unifyCommands {
+				values[j] = append(values[j], bmsFile.Header[uc])
+				if i > 0 && values[j][i-1] != bmsFile.Header[uc] {
+					isNotUnified[j] = true
+				}
 			}
 		}
-	}
-	for index, uc := range unifyCommands {
-		if isNotUnified[index] {
-			strs := []string{}
-			for j, bmsFile := range bmsDir.BmsFiles {
-				strs = append(strs, fmt.Sprintf("%s: %s", relativePathFromBmsRoot(bmsFile.Path), values[index][j]))
+		for index, uc := range unifyCommands {
+			if isNotUnified[index] {
+				strs := []string{}
+				for j, bmsFile := range bmsDir.BmsFiles {
+					strs = append(strs, fmt.Sprintf("%s: %s", relativePathFromBmsRoot(bmsFile.Path), values[index][j]))
+				}
+				log := Log{Level: Warning, Message: fmt.Sprintf("#%s is not unified", strings.ToUpper(uc)), SubLogs: strs}
+				bmsDir.Logs = append(bmsDir.Logs, log)
 			}
-			log := Log{Level: Warning, Message: fmt.Sprintf("#%s is not unified", strings.ToUpper(uc)), SubLogs: strs}
-			bmsDir.Logs = append(bmsDir.Logs, log)
 		}
-	}
+	}()
 
 	// check unused files and empty directories
-	isPreview := func(path string) bool {
-		for _, ext := range AUDIO_EXTS {
-			if regexp.MustCompile(`^preview.*` + ext + `$`).MatchString(relativePathFromBmsRoot(path)) {
-				return true
+	func() {
+		ignoreExts := []string{".txt", ".zip", ".rar", ".lzh", ".7z"}
+		for _, nonBmsFile := range bmsDir.NonBmsFiles {
+			if !nonBmsFile.Used && !hasExts(nonBmsFile.Path, ignoreExts) && !isPreview(nonBmsFile.Path) {
+				bmsDir.Logs.addNewLog(Notice, "This file is not used: "+relativePathFromBmsRoot(nonBmsFile.Path))
 			}
 		}
-		return false
-	}
-	ignoreExts := []string{".txt", ".zip", ".rar", ".lzh", ".7z"}
-	for _, nonBmsFile := range bmsDir.NonBmsFiles {
-		if !nonBmsFile.Used && !hasExts(nonBmsFile.Path, ignoreExts) && !isPreview(nonBmsFile.Path) {
-			bmsDir.Logs.addNewLog(Notice, "This file is not used: "+relativePathFromBmsRoot(nonBmsFile.Path))
+		for _, dir := range bmsDir.Directories {
+			if len(dir.BmsFiles) == 0 && len(dir.NonBmsFiles) == 0 && len(dir.Directories) == 0 {
+				bmsDir.Logs.addNewLog(Notice, "This directory is empty: "+relativePathFromBmsRoot(dir.Path))
+			}
 		}
-	}
-	for _, dir := range bmsDir.Directories {
-		if len(dir.BmsFiles) == 0 && len(dir.NonBmsFiles) == 0 && len(dir.Directories) == 0 {
-			bmsDir.Logs.addNewLog(Notice, "This directory is empty: "+relativePathFromBmsRoot(dir.Path))
-		}
-	}
+	}()
 
 	// check environment-dependent filename (must do after used check)
-	filenameLog := func(path string) {
-		bmsDir.Logs.addNewLog(Warning, "This filename has environment-dependent characters: "+path)
-	}
-	for _, file := range bmsDir.BmsFiles {
-		if rPath := relativePathFromBmsRoot(file.Path); containsMultibyteRune(rPath) {
-			filenameLog(rPath)
+	func() {
+		filenameLog := func(path string) {
+			bmsDir.Logs.addNewLog(Warning, "This filename has environment-dependent characters: "+path)
 		}
-	}
-	for _, file := range bmsDir.NonBmsFiles {
-		if rPath := relativePathFromBmsRoot(file.Path); (file.Used || strings.ToLower(filepath.Ext(file.Path)) == ".txt" || isPreview(file.Path)) &&
-			containsMultibyteRune(rPath) {
-			filenameLog(rPath)
+		for _, file := range bmsDir.BmsFiles {
+			if rPath := relativePathFromBmsRoot(file.Path); containsMultibyteRune(rPath) {
+				filenameLog(rPath)
+			}
 		}
-	}
+		for _, file := range bmsDir.NonBmsFiles {
+			if rPath := relativePathFromBmsRoot(file.Path); (file.Used || strings.ToLower(filepath.Ext(file.Path)) == ".txt" || isPreview(file.Path)) &&
+				containsMultibyteRune(rPath) {
+				filenameLog(rPath)
+			}
+		}
+	}()
 
 	// check over 1 minute audio file (must do after used check)
 	for _, file := range bmsDir.NonBmsFiles {
