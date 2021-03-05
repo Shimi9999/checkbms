@@ -1091,28 +1091,40 @@ func CheckBmsFile(bmsFile *BmsFile) {
 				noteObjs = append(noteObjs, obj)
 			}
 		}
-		ongoingLNs := map[string]*bmsObj{}
 		nmObjs := append(noteObjs, bmsFile.BmsMineObjs...)
 		sort.Slice(nmObjs, func(i, j int) bool { return nmObjs[i].time() < nmObjs[j].time() })
 		boi := newBmsObjsIterator(nmObjs)
+		ongoingLNs := map[string]*bmsObj{}
+		// ノーツ内包ログをレーンごとに貯めておき、LN終端が見つかったらログを確定させる
+		ongoingLNLogs := map[string]([]Log){}
+		commitOngoingLNLogs := func(ch string) {
+			for _, log := range ongoingLNLogs[ch] {
+				bmsFile.Logs = append(bmsFile.Logs, log)
+			}
+			ongoingLNLogs[ch] = nil
+		}
+
 		for momentObjs := boi.next(); len(momentObjs) > 0; momentObjs = boi.next() {
 			for _, obj := range momentObjs {
 				chint, _ := strconv.Atoi(obj.Channel)
-				if (chint >= 51 && chint <= 59) || (chint >= 61 && chint <= 69) {
+				if (chint >= 51 && chint <= 59) || (chint >= 61 && chint <= 69) { // LN start and end
 					if ongoingLNs[obj.Channel] == nil {
 						ongoingLNs[obj.Channel] = &obj
 					} else {
 						ongoingLNs[obj.Channel] = nil
+						commitOngoingLNLogs(obj.Channel)
 					}
-				} else if (chint >= 11 && chint <= 19) || (chint >= 21 && chint <= 29) {
+				} else if (chint >= 11 && chint <= 19) || (chint >= 21 && chint <= 29) { // normal note
 					lnCh := strconv.Itoa(chint + 40)
 					if ongoingLNs[lnCh] != nil {
-						if obj.value36() == bmsFile.lnobj() {
+						if obj.value36() == bmsFile.lnobj() { // lnobj
 							ongoingLNs[lnCh] = nil
+							commitOngoingLNLogs(lnCh)
 						} else {
-							bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Normal note is in LN: %s(#%03d %s %d/%d) in %s(#%03d %s %d/%d)",
+							log := Log{Level: Error, Message: fmt.Sprintf("Normal note is in LN: %s(#%03d %s %d/%d) in %s(#%03d %s %d/%d)",
 								strings.ToUpper(obj.value36()), momentObjs[0].Measure, lnCh, momentObjs[0].Position.Numerator, momentObjs[0].Position.Denominator,
-								strings.ToUpper(ongoingLNs[lnCh].value36()), ongoingLNs[lnCh].Measure, lnCh, ongoingLNs[lnCh].Position.Numerator, ongoingLNs[lnCh].Position.Denominator))
+								strings.ToUpper(ongoingLNs[lnCh].value36()), ongoingLNs[lnCh].Measure, lnCh, ongoingLNs[lnCh].Position.Numerator, ongoingLNs[lnCh].Position.Denominator)}
+							ongoingLNLogs[lnCh] = append(ongoingLNLogs[lnCh], log)
 						}
 					}
 				} else if obj.Channel[0] == 'd' || obj.Channel[0] == 'e' { // Mine
@@ -1124,13 +1136,15 @@ func CheckBmsFile(bmsFile *BmsFile) {
 					}
 					lnCh := strconv.Itoa(chint)
 					if ongoingLNs[lnCh] != nil {
-						bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Mine note is in LN: %s(#%03d %s %d/%d) in %s(#%03d %s %d/%d)",
+						log := Log{Level: Error, Message: fmt.Sprintf("Mine note is in LN: %s(#%03d %s %d/%d) in %s(#%03d %s %d/%d)",
 							strings.ToUpper(obj.value36()), momentObjs[0].Measure, lnCh, momentObjs[0].Position.Numerator, momentObjs[0].Position.Denominator,
-							strings.ToUpper(ongoingLNs[lnCh].value36()), ongoingLNs[lnCh].Measure, lnCh, ongoingLNs[lnCh].Position.Numerator, ongoingLNs[lnCh].Position.Denominator))
+							strings.ToUpper(ongoingLNs[lnCh].value36()), ongoingLNs[lnCh].Measure, lnCh, ongoingLNs[lnCh].Position.Numerator, ongoingLNs[lnCh].Position.Denominator)}
+						ongoingLNLogs[lnCh] = append(ongoingLNLogs[lnCh], log)
 					}
 				}
 			}
 		}
+
 		ongoingLNsSlice := []*bmsObj{}
 		for _, ln := range ongoingLNs {
 			if ln != nil {
@@ -1139,8 +1153,8 @@ func CheckBmsFile(bmsFile *BmsFile) {
 		}
 		sort.Slice(ongoingLNsSlice, func(i, j int) bool { return ongoingLNsSlice[i].time() < ongoingLNsSlice[j].time() })
 		for _, lnStart := range ongoingLNsSlice {
-			bmsFile.Logs.addNewLog(Error, fmt.Sprintf("LN is not finished: %s(#%d,%d/%d)",
-				strings.ToUpper(lnStart.value36()), lnStart.Measure, lnStart.Position.Numerator, lnStart.Position.Denominator))
+			bmsFile.Logs.addNewLog(Error, fmt.Sprintf("End of LN is missing: %s(#%03d %s %d/%d)",
+				strings.ToUpper(lnStart.value36()), lnStart.Measure, lnStart.Channel, lnStart.Position.Numerator, lnStart.Position.Denominator))
 		}
 	}()
 
