@@ -299,7 +299,7 @@ func (bo bmsObj) string(bmsFile *BmsFile) string {
 		definedValue = fmt.Sprintf(" (%s)", bmsFile.definedValue(bo.ObjType, val))
 	}
 	return fmt.Sprintf("#%03d %s (%d/%d) #%s%s%s",
-		bo.Measure, bo.Channel, bo.Position.Numerator, bo.Position.Denominator, bo.ObjType.string(), strings.ToUpper(val), definedValue)
+		bo.Measure, strings.ToUpper(bo.Channel), bo.Position.Numerator, bo.Position.Denominator, bo.ObjType.string(), strings.ToUpper(val), definedValue)
 }
 
 type measureLength struct {
@@ -1000,7 +1000,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 			}
 			for _, def := range definitions {
 				if !usedObjs[def.Index] && def.Index != ignoreDef {
-					bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Defined %s object is not used: %s(%s)",
+					bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Defined %s object is not used: %s (%s)",
 						t.string(), strings.ToUpper(def.Index), def.Value))
 				}
 			}
@@ -1040,7 +1040,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 				fp := fraction{momentObjs[0].Position.Numerator, momentObjs[0].Position.Denominator}
 				fp.reduce()
 				for _, dup := range duplicates {
-					bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Placed WAV objects are duplicate(#%03d,%d/%d): %s (%s) * %d",
+					bmsFile.Logs.addNewLog(Warning, fmt.Sprintf("Placed WAV objects are duplicate: #%03d (%d/%d) %s (%s) * %d",
 						momentObjs[0].Measure, fp.Numerator, fp.Denominator, strings.ToUpper(dup), bmsFile.definedValue(Wav, strings.ToUpper(dup)), objCounts[dup]))
 				}
 			}
@@ -1072,12 +1072,12 @@ func CheckBmsFile(bmsFile *BmsFile) {
 				if len(objs) > 1 {
 					fp := fraction{objs[0].Position.Numerator, objs[0].Position.Denominator}
 					fp.reduce()
-					s := ""
+					objsStr := ""
 					for _, obj := range objs {
-						s += fmt.Sprintf("[%s]%s ", strings.ToUpper(obj.Channel), strings.ToUpper(obj.value36()))
+						objsStr += fmt.Sprintf("[%s]#WAV%s ", strings.ToUpper(obj.Channel), strings.ToUpper(obj.value36()))
 					}
-					bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Placed notes overlap(#%03d,%d/%d): %s",
-						objs[0].Measure, fp.Numerator, fp.Denominator, s))
+					bmsFile.Logs.addNewLog(Error, fmt.Sprintf("Placed notes overlap: #%03d (%d/%d) %s",
+						objs[0].Measure, fp.Numerator, fp.Denominator, objsStr))
 				}
 			}
 		}
@@ -1121,10 +1121,8 @@ func CheckBmsFile(bmsFile *BmsFile) {
 							ongoingLNs[lnCh] = nil
 							commitOngoingLNLogs(lnCh)
 						} else {
-							log := Log{Level: Error, Message: fmt.Sprintf("Normal note is in LN: %s(#%03d %s %d/%d) in %s(#%03d %s %d/%d)",
-								strings.ToUpper(obj.value36()), momentObjs[0].Measure, lnCh, momentObjs[0].Position.Numerator, momentObjs[0].Position.Denominator,
-								strings.ToUpper(ongoingLNs[lnCh].value36()), ongoingLNs[lnCh].Measure, lnCh, ongoingLNs[lnCh].Position.Numerator, ongoingLNs[lnCh].Position.Denominator)}
-							ongoingLNLogs[lnCh] = append(ongoingLNLogs[lnCh], log)
+							ongoingLNLogs[lnCh] = append(ongoingLNLogs[lnCh],
+								Log{Level: Error, Message: fmt.Sprintf("Normal note is in LN: %s in %s", obj.string(nil), ongoingLNs[lnCh].string(nil))})
 						}
 					}
 				} else if obj.Channel[0] == 'd' || obj.Channel[0] == 'e' { // Mine
@@ -1136,10 +1134,8 @@ func CheckBmsFile(bmsFile *BmsFile) {
 					}
 					lnCh := strconv.Itoa(chint)
 					if ongoingLNs[lnCh] != nil {
-						log := Log{Level: Error, Message: fmt.Sprintf("Mine note is in LN: %s(#%03d %s %d/%d) in %s(#%03d %s %d/%d)",
-							strings.ToUpper(obj.value36()), momentObjs[0].Measure, lnCh, momentObjs[0].Position.Numerator, momentObjs[0].Position.Denominator,
-							strings.ToUpper(ongoingLNs[lnCh].value36()), ongoingLNs[lnCh].Measure, lnCh, ongoingLNs[lnCh].Position.Numerator, ongoingLNs[lnCh].Position.Denominator)}
-						ongoingLNLogs[lnCh] = append(ongoingLNLogs[lnCh], log)
+						ongoingLNLogs[lnCh] = append(ongoingLNLogs[lnCh],
+							Log{Level: Error, Message: fmt.Sprintf("Mine note is in LN: %s in %s", obj.string(nil), ongoingLNs[lnCh].string(nil))})
 					}
 				}
 			}
@@ -1153,8 +1149,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 		}
 		sort.Slice(ongoingLNsSlice, func(i, j int) bool { return ongoingLNsSlice[i].time() < ongoingLNsSlice[j].time() })
 		for _, lnStart := range ongoingLNsSlice {
-			bmsFile.Logs.addNewLog(Error, fmt.Sprintf("End of LN is missing: %s(#%03d %s %d/%d)",
-				strings.ToUpper(lnStart.value36()), lnStart.Measure, lnStart.Channel, lnStart.Position.Numerator, lnStart.Position.Denominator))
+			bmsFile.Logs.addNewLog(Error, fmt.Sprintf("End of LN is missing: %s", lnStart.string(bmsFile)))
 		}
 	}()
 
@@ -1164,8 +1159,8 @@ func CheckBmsFile(bmsFile *BmsFile) {
 			_, err := strconv.ParseInt(obj.value36(), 16, 64)
 			if err != nil {
 				bmsFile.Logs.addNewLog(Error, fmt.Sprintf("BPM object has invalid value: %s",
-					fmt.Sprintf("#%03d (%d/%d) %s",
-						obj.Measure, obj.Position.Numerator, obj.Position.Denominator, strings.ToUpper(obj.value36()))))
+					fmt.Sprintf("%s (#%03d (%d/%d))",
+						strings.ToUpper(obj.value36()), obj.Measure, obj.Position.Numerator, obj.Position.Denominator)))
 			}
 		}
 	}()
