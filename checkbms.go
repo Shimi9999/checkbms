@@ -1441,14 +1441,18 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 		}
 		for i := 0; i < len(bmsDir.BmsFiles); i++ {
 			for j := i + 1; j < len(bmsDir.BmsFiles); j++ {
+				if bmsDir.BmsFiles[i].Sha256 == bmsDir.BmsFiles[j].Sha256 {
+					continue
+				}
+
 				diffDefs := func(t objType, iBmsFile, jBmsFile *BmsFile) {
 					iDefs, jDefs := iBmsFile.headerIndexedDefs(t), jBmsFile.headerIndexedDefs(t)
 					iDefStrs, jDefStrs := []string{}, []string{}
 					for _, def := range iDefs {
-						iDefStrs = append(iDefStrs, fmt.Sprintf("#%s %s", strings.ToUpper(def.CommandName), def.Value))
+						iDefStrs = append(iDefStrs, fmt.Sprintf("#%s %s", strings.ToUpper(def.command()), def.Value))
 					}
 					for _, def := range jDefs {
-						jDefStrs = append(jDefStrs, fmt.Sprintf("#%s %s", strings.ToUpper(def.CommandName), def.Value))
+						jDefStrs = append(jDefStrs, fmt.Sprintf("#%s %s", strings.ToUpper(def.command()), def.Value))
 					}
 					ed, ses := diff.Onp(iDefStrs, jDefStrs)
 					if ed > 0 {
