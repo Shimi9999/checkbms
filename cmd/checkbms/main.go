@@ -11,6 +11,7 @@ import (
 
 func main() {
 	doDiffCheck := flag.Bool("diff", false, "check difference flag")
+	lang := flag.String("lang", "en", "log language")
 	flag.Parse()
 
 	if len(flag.Args()) >= 2 {
@@ -43,12 +44,12 @@ func main() {
 			var log string
 			for _, bmsFile := range dir.BmsFiles {
 				if len(bmsFile.Logs) > 0 {
-					log += bmsFile.LogString(false)
+					log += bmsFile.LogStringWithLang(false, *lang)
 					log += "\n\n"
 				}
 			}
 			if len(dir.Logs) > 0 {
-				log += dir.LogString(false)
+				log += dir.LogStringWithLang(false, *lang)
 				log += "\n\n"
 			}
 			fmt.Printf("%s", log)
@@ -61,7 +62,7 @@ func main() {
 		}
 		checkbms.CheckBmsFile(bmsFile)
 		if len(bmsFile.Logs) > 0 {
-			fmt.Println(bmsFile.LogString(false))
+			fmt.Println(bmsFile.LogStringWithLang(false, *lang))
 		}
 	} else {
 		fmt.Println("Error: Entered path is not bms file or directory")
