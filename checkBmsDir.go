@@ -49,7 +49,7 @@ func containsInNonBmsFiles(bmsDir *Directory, path string, exts []string) bool {
 
 func isPreview(dirPath, path string) bool {
 	for _, ext := range AUDIO_EXTS {
-		if regexp.MustCompile(`^preview.*` + ext + `$`).MatchString(relativePathFromBmsRoot(dirPath, path)) {
+		if regexp.MustCompile(`^preview.*` + ext + `$`).MatchString(strings.ToLower(relativePathFromBmsRoot(dirPath, path))) {
 			return true
 		}
 	}
