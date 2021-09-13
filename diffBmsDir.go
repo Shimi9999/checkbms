@@ -9,12 +9,12 @@ import (
 // 2つのディレクトリ内のファイル分布が一致するか比較して確認する。比較はファイルパスで行う。
 // 音声、画像、動画ファイルを比較する時は、パスの拡張子を取り除き、名前だけで比較する。
 // bmsfileは同名ファイルでsha256の比較をする。一致しなかった場合はファイル記述内容のdiffをとる。
-func DiffBmsDirectories(dirPath1, dirPath2 string) error {
+func DiffBmsDirectories(dirPath1, dirPath2 string) (logs []string, _ error) {
 	const dirlen int = 2
 	dirPaths := [dirlen]string{dirPath1, dirPath2}
 	for _, dirPath := range dirPaths {
 		if !IsBmsDirectory(dirPath) {
-			return fmt.Errorf("This is not BMS Directory path: %s", dirPath)
+			return nil, fmt.Errorf("This is not BMS Directory path: %s", dirPath)
 		}
 	}
 
@@ -22,7 +22,7 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) error {
 	for i, dirPath := range dirPaths {
 		bmsDir, err := scanBmsDirectory(dirPath, true, false)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		bmsDirs[i] = *bmsDir
 	}
@@ -83,7 +83,6 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) error {
 	}
 
 	//dir1MissingLogs, dir2MissingLogs := []string{}, []string{}
-	logs := []string{}
 
 	missingLog := func(dirPath, missingPath string) {
 		logs = append(logs, fmt.Sprintf("%s is missing the file: %s", dirPath, missingPath))
@@ -124,9 +123,5 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) error {
 		}
 	}
 
-	for _, log := range logs {
-		fmt.Println(log)
-	}
-
-	return nil
+	return logs, nil
 }

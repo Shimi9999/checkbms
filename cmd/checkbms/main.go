@@ -105,9 +105,12 @@ func doDiffBmsDir(dirPath1, dirPath2 string) error {
 		return fmt.Errorf("Error: Path2 is wrong: %s", err.Error())
 	}
 
-	err = checkbms.DiffBmsDirectories(dirPath1, dirPath2)
+	logs, err := checkbms.DiffBmsDirectories(dirPath1, dirPath2)
 	if err != nil {
 		return fmt.Errorf("Error: DiffBmsDirectories error: %s", err.Error())
+	}
+	for _, log := range logs {
+		fmt.Println(log)
 	}
 	return nil
 }
