@@ -768,7 +768,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 }
 
 func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
-	for i, bmsFile := range bmsDir.BmsFiles {
+	for i := range bmsDir.BmsFiles {
 		CheckBmsFile(&bmsDir.BmsFiles[i])
 
 		for _, result := range CheckDefinedFilesExist(bmsDir, &bmsDir.BmsFiles[i]) {
@@ -798,10 +798,10 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 			func() {
 				result1, result2 := CheckWithoutKeysound(&bmsDir.BmsFiles[i], wavFileIsExist)
 				if result1 != nil {
-					bmsDir.BmsFiles[i].Logs = append(bmsFile.Logs, result1.Log())
+					bmsDir.BmsFiles[i].Logs = append(bmsDir.BmsFiles[i].Logs, result1.Log())
 				}
 				if result2 != nil {
-					bmsDir.BmsFiles[i].Logs = append(bmsFile.Logs, result2.Log())
+					bmsDir.BmsFiles[i].Logs = append(bmsDir.BmsFiles[i].Logs, result2.Log())
 				}
 			}()
 		}
