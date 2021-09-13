@@ -5,10 +5,7 @@ package checkbms
 import (
 	"bufio"
 	"bytes"
-	"crypto/sha256"
 	"fmt"
-	"io/ioutil"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -70,12 +67,10 @@ func (bu bmsFileCharsetIsUtf8) Log() Log {
 	}
 }
 
-func ScanBmsFile(path string) (*BmsFile, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("BMSfile open error: " + err.Error())
+func (bmsFile *BmsFile) ScanBmsFile() error {
+	if bmsFile.FullText == nil {
+		return fmt.Errorf("FullText is empty: %s", bmsFile.Path)
 	}
-	defer file.Close()
 
 	var dds []duplicateDefinition
 	var ils []invalidLine
@@ -85,13 +80,12 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 		initialBufSize = 10000
 		maxBufSize     = 1000000
 	)
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(bytes.NewReader(bmsFile.FullText))
 	buf := make([]byte, initialBufSize)
 	scanner.Buffer(buf, maxBufSize)
 
 	hasUtf8Bom := false
 	hasMultibyteRune := false
-	bmsFile := newBmsFile(path)
 	randomCommands := []string{"random", "if", "endif"}
 	for lineNumber := 0; scanner.Scan(); lineNumber++ {
 		if lineNumber == 0 && bytes.HasPrefix(([]byte)(scanner.Text()), []byte{0xef, 0xbb, 0xbf}) {
@@ -108,7 +102,7 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 		}
 		line, _, err := transform.String(japanese.ShiftJIS.NewDecoder(), trimmedText)
 		if err != nil {
-			return nil, fmt.Errorf("Shift-JIS decode error: " + err.Error())
+			return fmt.Errorf("Shift-JIS decode error: " + err.Error())
 		}
 		if !hasMultibyteRune && containsMultibyteRune(line) {
 			hasMultibyteRune = true
@@ -246,17 +240,8 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 	correctLine:
 	}
 	if scanner.Err() != nil {
-		return nil, fmt.Errorf("BMSfile scan error: " + scanner.Err().Error())
+		return fmt.Errorf("BMSfile scan error: " + scanner.Err().Error())
 	}
-
-	if _, err = file.Seek(0, 0); err != nil {
-		return nil, fmt.Errorf("BMSfile Seek error: " + err.Error())
-	}
-	fullFile, err := ioutil.ReadAll(file)
-	if err != nil {
-		return nil, fmt.Errorf("BMSfile ReadAll error: " + err.Error())
-	}
-	bmsFile.Sha256 = fmt.Sprintf("%x", sha256.Sum256(fullFile))
 
 	bmsFile.sortBmsObjs()
 	bmsFile.setIsLNEnd()
@@ -264,7 +249,7 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 	isUtf8 := hasUtf8Bom
 	if !isUtf8 {
 		var err error
-		isUtf8, err = isUTF8(path)
+		isUtf8, err = isUTF8(bmsFile.FullText)
 		if err != nil {
 			isUtf8 = false
 		}
@@ -301,7 +286,7 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 	}
 	bmsFile.TotalNotes += lnCount / 2
 
-	if filepath.Ext(path) == ".pms" {
+	if filepath.Ext(bmsFile.Path) == ".pms" {
 		bmsFile.Keymode = 9
 	} else if chmap["10k"] || chmap["14k"] {
 		if chmap["7k"] || chmap["14k"] {
@@ -328,7 +313,7 @@ func ScanBmsFile(path string) (*BmsFile, error) {
 	bmsFile.Logs.addLogFromResult(ils)
 	bmsFile.Logs.addLogFromResult(bu)*/
 
-	return bmsFile, nil
+	return nil
 }
 
 /*type missingDefinition struct {

@@ -1,10 +1,12 @@
 package checkbms
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io/ioutil"
 	"math"
 	"math/big"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -128,6 +130,7 @@ type BmsFile struct {
 	Keymode            int // 5, 7, 9, 10, 14, 24, 48
 	TotalNotes         int
 	Sha256             string
+	FullText           []byte
 	Logs               Logs
 }
 
@@ -591,7 +594,7 @@ func matchChannel(ch string, channels []string) bool {
 func ScanDirectory(path string) ([]Directory, error) {
 	bmsDirs := []Directory{}
 	if IsBmsDirectory(path) {
-		bmsDir, err := scanBmsDirectory(path, true)
+		bmsDir, err := scanBmsDirectory(path, true, true)
 		if err != nil {
 			return nil, err
 		}
@@ -615,28 +618,32 @@ func ScanDirectory(path string) ([]Directory, error) {
 	return bmsDirs, nil
 }
 
-func scanBmsDirectory(path string, isRootDir bool) (*Directory, error) {
+func scanBmsDirectory(path string, isRootDir, doScan bool) (*Directory, error) {
 	dir := newDirectory(path)
 	files, _ := ioutil.ReadDir(path)
 
 	for _, f := range files {
 		filePath := filepath.Join(path, f.Name())
-		if isRootDir && IsBmsFile(f.Name()) {
-			var bmsFile *BmsFile
-			if filepath.Ext(filePath) == ".bmson" {
-				// TODO loadBmson作る
-				// bmsfile, err := LoadBmson(bmspath)
-				continue
-			} else {
-				var err error
-				bmsFile, err = ScanBmsFile(filePath)
-				if err != nil {
-					return nil, err
+		if isRootDir && IsBmsFile(f.Name()) { // TODO isRootDirいる？on/off付ける？
+			bmsFile, err := ReadBmsFile(filePath) // allTextを読み込む&sha256を生成
+			if err != nil {
+				return nil, err
+			}
+			if doScan {
+				if filepath.Ext(filePath) == ".bmson" {
+					// TODO loadBmson作る
+					// bmsfile, err := LoadBmson(bmspath)
+					continue
+				} else {
+					err := bmsFile.ScanBmsFile()
+					if err != nil {
+						return nil, err
+					}
 				}
 			}
 			dir.BmsFiles = append(dir.BmsFiles, *bmsFile)
 		} else if f.IsDir() {
-			innnerDir, err := scanBmsDirectory(filePath, false)
+			innnerDir, err := scanBmsDirectory(filePath, false, doScan)
 			if err != nil {
 				return nil, err
 			}
@@ -649,6 +656,25 @@ func scanBmsDirectory(path string, isRootDir bool) (*Directory, error) {
 	}
 
 	return dir, nil
+}
+
+func ReadBmsFile(path string) (*BmsFile, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("BMSfile open error: " + err.Error())
+	}
+	defer file.Close()
+
+	bmsFile := newBmsFile(path)
+
+	fullText, err := ioutil.ReadAll(file)
+	if err != nil {
+		return nil, fmt.Errorf("BMSfile ReadAll error: " + err.Error())
+	}
+	bmsFile.FullText = fullText
+	bmsFile.Sha256 = fmt.Sprintf("%x", sha256.Sum256(bmsFile.FullText))
+
+	return bmsFile, nil
 }
 
 func CheckBmsFile(bmsFile *BmsFile) {
@@ -822,8 +848,9 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 }
 
 func hasExts(path string, exts []string) bool {
+	pathExt := filepath.Ext(path)
 	for _, ext := range exts {
-		if strings.EqualFold(ext, filepath.Ext(path)) {
+		if strings.EqualFold(ext, pathExt) {
 			return true
 		}
 	}
@@ -852,12 +879,7 @@ func containsMultibyteRune(text string) bool {
 	return len(text) != utf8.RuneCountInString(text)
 }
 
-func isUTF8(path string) (bool, error) {
-	fBytes, err := ioutil.ReadFile(path)
-	if err != nil {
-		return false, err
-	}
-
+func isUTF8(fBytes []byte) (bool, error) {
 	det := chardet.NewTextDetector()
 	detResult, err := det.DetectBest(fBytes)
 	if err != nil {
