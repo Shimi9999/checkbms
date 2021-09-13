@@ -19,66 +19,79 @@ func main() {
 		os.Exit(1)
 	}
 
-	var path string
-	if len(flag.Args()) == 0 {
-		path = "./"
-	} else if len(flag.Args()) == 2 {
-		if err := doDiffBmsDir(flag.Arg(0), flag.Arg(1)); err == nil {
+	if len(flag.Args()) == 2 {
+		if err := doDiffBmsDir(flag.Arg(0), flag.Arg(1)); err != nil {
 			fmt.Println("Error: doDiffBmsDir:", err.Error())
 			os.Exit(1)
 		}
-		os.Exit(0)
 	} else {
-		path = flag.Arg(0)
-	}
-	fInfo, err := os.Stat(path)
-	if err != nil {
-		fmt.Println("Error: Path is wrong:", err.Error())
-		os.Exit(1)
-	}
-	path = filepath.Clean(path)
+		path := "./"
+		if len(flag.Args()) == 1 {
+			path = flag.Arg(0)
+		}
 
-	if fInfo.IsDir() {
-		bmsDirs, err := checkbms.ScanDirectory(path)
+		fInfo, err := os.Stat(path)
 		if err != nil {
-			fmt.Println("Error: scanDirectory error:", err.Error())
+			fmt.Println("Error: Path is wrong:", err.Error())
 			os.Exit(1)
 		}
-		for _, dir := range bmsDirs {
-			checkbms.CheckBmsDirectory(&dir, *doDiffCheck)
+		path = filepath.Clean(path)
 
-			var log string
-			for _, bmsFile := range dir.BmsFiles {
-				if len(bmsFile.Logs) > 0 {
-					log += bmsFile.LogStringWithLang(false, *lang)
-					log += "\n\n"
-				}
+		if fInfo.IsDir() {
+			if err := doCheckBmsDirectory(path, *doDiffCheck, *lang); err != nil {
+				fmt.Println("Error: CheckBmsDirectory error:", err.Error())
+				os.Exit(1)
 			}
-			if len(dir.Logs) > 0 {
-				log += dir.LogStringWithLang(false, *lang)
+		} else if checkbms.IsBmsFile(path) {
+			if err := doCheckBmsFile(path, *lang); err != nil {
+				fmt.Println("Error: CheckBmsFile error:", err.Error())
+				os.Exit(1)
+			}
+		} else {
+			fmt.Println("Error: Entered path is not bms file or directory")
+			os.Exit(1)
+		}
+	}
+}
+
+func doCheckBmsDirectory(path string, doDiffCheck bool, lang string) error {
+	bmsDirs, err := checkbms.ScanDirectory(path)
+	if err != nil {
+		return fmt.Errorf("Error: scanDirectory error: %s", err.Error())
+	}
+	for _, dir := range bmsDirs {
+		checkbms.CheckBmsDirectory(&dir, doDiffCheck)
+
+		var log string
+		for _, bmsFile := range dir.BmsFiles {
+			if len(bmsFile.Logs) > 0 {
+				log += bmsFile.LogStringWithLang(false, lang)
 				log += "\n\n"
 			}
-			fmt.Printf("%s", log)
 		}
-	} else if checkbms.IsBmsFile(path) {
-		bmsFile, err := checkbms.ReadBmsFile(path)
-		if err != nil {
-			fmt.Println("Error: ScanBms error:", err.Error())
-			os.Exit(1)
+		if len(dir.Logs) > 0 {
+			log += dir.LogStringWithLang(false, lang)
+			log += "\n\n"
 		}
-		err = bmsFile.ScanBmsFile()
-		if err != nil {
-			fmt.Println("Error: ScanBms error:", err.Error())
-			os.Exit(1)
-		}
-		checkbms.CheckBmsFile(bmsFile)
-		if len(bmsFile.Logs) > 0 {
-			fmt.Println(bmsFile.LogStringWithLang(false, *lang))
-		}
-	} else {
-		fmt.Println("Error: Entered path is not bms file or directory")
-		os.Exit(1)
+		fmt.Printf("%s", log)
 	}
+	return nil
+}
+
+func doCheckBmsFile(path, lang string) error {
+	bmsFile, err := checkbms.ReadBmsFile(path)
+	if err != nil {
+		return fmt.Errorf("Error: ReadBmsFile error: %s", err.Error())
+	}
+	err = bmsFile.ScanBmsFile()
+	if err != nil {
+		return fmt.Errorf("Error: ScanBmsFile error: %s", err.Error())
+	}
+	checkbms.CheckBmsFile(bmsFile)
+	if len(bmsFile.Logs) > 0 {
+		fmt.Println(bmsFile.LogStringWithLang(false, lang))
+	}
+	return nil
 }
 
 func doDiffBmsDir(dirPath1, dirPath2 string) error {
