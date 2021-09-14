@@ -82,10 +82,10 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (logs []string, _ error) {
 		comDirs[i].Directories = sortSliceWithPath(comDirs[i].Directories)
 	}
 
-	//dir1MissingLogs, dir2MissingLogs := []string{}, []string{}
+	hashLogs, missingLogs1, missingLogs2 := []string{}, []string{}, []string{}
 
-	missingLog := func(dirPath, missingPath string) {
-		logs = append(logs, fmt.Sprintf("%s is missing the file: %s", dirPath, missingPath))
+	missingLog := func(dirPath, missingPath string) string {
+		return fmt.Sprintf("%s is missing the file: %s", dirPath, missingPath)
 	}
 	comFileSlices1 := []([]compareFile){comDirs[0].BmsFiles, comDirs[0].AudioFiles, comDirs[0].ImageFiles, comDirs[0].MovieFiles, comDirs[0].OtherFiles, comDirs[0].Directories}
 	comFileSlices2 := []([]compareFile){comDirs[1].BmsFiles, comDirs[1].AudioFiles, comDirs[1].ImageFiles, comDirs[1].MovieFiles, comDirs[1].OtherFiles, comDirs[1].Directories}
@@ -94,7 +94,7 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (logs []string, _ error) {
 		i2init := 0
 		for i1 := 0; i1 < len(comFiles1); i1++ {
 			if i2init == len(comFiles2) {
-				missingLog(dirPath2, comFiles1[i1].Path)
+				missingLogs2 = append(missingLogs2, missingLog(dirPath2, comFiles1[i1].Path))
 				continue
 			}
 			for i2 := i2init; i2 < len(comFiles2); i2++ {
@@ -102,7 +102,7 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (logs []string, _ error) {
 					if comFiles1[i1].BmsFileData != nil && comFiles2[i2].BmsFileData != nil {
 						if comFiles1[i1].BmsFileData.Sha256 != comFiles2[i2].BmsFileData.Sha256 {
 							// ここでファイル内容diff
-							logs = append(logs, fmt.Sprintf("%s: Each sha256 is not equal:\n \t%s: %s\n\t%s: %s",
+							hashLogs = append(hashLogs, fmt.Sprintf("%s: Each hash(sha256) is not equal:\n  %s: %s\n  %s: %s",
 								comFiles1[i1].Path, dirPath1, comFiles1[i1].BmsFileData.Sha256, dirPath2, comFiles2[i2].BmsFileData.Sha256))
 						}
 					}
@@ -110,18 +110,20 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (logs []string, _ error) {
 					break
 				} else {
 					if comFiles1[i1].ComparePath < comFiles2[i2].ComparePath {
-						missingLog(dirPath2, comFiles1[i1].Path)
+						missingLogs2 = append(missingLogs2, missingLog(dirPath2, comFiles1[i1].Path))
 						break
 					} else {
-						missingLog(dirPath1, comFiles2[i2].Path)
+						missingLogs1 = append(missingLogs1, missingLog(dirPath1, comFiles2[i2].Path))
 					}
 				}
 			}
 		}
 		for i2 := i2init; i2 < len(comFiles2); i2++ {
-			missingLog(dirPath1, comFiles2[i2].Path)
+			missingLogs1 = append(missingLogs1, missingLog(dirPath1, comFiles2[i2].Path))
 		}
 	}
+
+	logs = append(hashLogs, append(missingLogs1, missingLogs2...)...)
 
 	return logs, nil
 }
