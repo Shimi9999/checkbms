@@ -2,8 +2,11 @@ package checkbms
 
 import (
 	"fmt"
+	"io/ioutil"
+	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // 2つのディレクトリ内のファイル分布が一致するか比較して確認する。比較はファイルパスで行う。
@@ -31,6 +34,7 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (logs []string, _ error) {
 		File
 		ComparePath string
 		BmsFileData *BmsFile
+		Text        *string
 	}
 	type compareDirectory struct {
 		BmsFiles    []compareFile
@@ -55,6 +59,7 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (logs []string, _ error) {
 			comDirs[i].Directories = append(comDirs[i].Directories, compareFile{File: dir.File, ComparePath: dir.Path})
 		}
 		for _, nonBmsFile := range bmsDirs[i].NonBmsFiles {
+			fullPath := nonBmsFile.Path
 			nonBmsFile.Path = removeRootDirPath(nonBmsFile.Path, dirPaths[i])
 			completedPath := nonBmsFile.Path[:len(nonBmsFile.Path)-len(filepath.Ext(nonBmsFile.Path))]
 			if hasExts(nonBmsFile.Path, AUDIO_EXTS) {
@@ -64,7 +69,21 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (logs []string, _ error) {
 			} else if hasExts(nonBmsFile.Path, MOVIE_EXTS) {
 				comDirs[i].MovieFiles = append(comDirs[i].MovieFiles, compareFile{File: nonBmsFile.File, ComparePath: completedPath})
 			} else {
-				comDirs[i].OtherFiles = append(comDirs[i].OtherFiles, compareFile{File: nonBmsFile.File, ComparePath: nonBmsFile.Path})
+				cf := compareFile{File: nonBmsFile.File, ComparePath: nonBmsFile.Path}
+				if strings.ToLower(filepath.Ext(nonBmsFile.Path)) == ".txt" {
+					file, err := os.Open(fullPath)
+					if err != nil {
+						return nil, fmt.Errorf("text open error: " + err.Error())
+					}
+					defer file.Close()
+					fullText, err := ioutil.ReadAll(file)
+					if err != nil {
+						return nil, fmt.Errorf("text ReadAll error: " + err.Error())
+					}
+					strText := string(fullText)
+					cf.Text = &strText
+				}
+				comDirs[i].OtherFiles = append(comDirs[i].OtherFiles, cf)
 			}
 		}
 	}
@@ -82,7 +101,7 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (logs []string, _ error) {
 		comDirs[i].Directories = sortSliceWithPath(comDirs[i].Directories)
 	}
 
-	hashLogs, missingLogs1, missingLogs2 := []string{}, []string{}, []string{}
+	hashLogs, textLogs, missingLogs1, missingLogs2 := []string{}, []string{}, []string{}, []string{}
 
 	missingLog := func(dirPath, missingPath string) string {
 		return fmt.Sprintf("%s is missing the file: %s", dirPath, missingPath)
@@ -102,8 +121,13 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (logs []string, _ error) {
 					if comFiles1[i1].BmsFileData != nil && comFiles2[i2].BmsFileData != nil {
 						if comFiles1[i1].BmsFileData.Sha256 != comFiles2[i2].BmsFileData.Sha256 {
 							// ここでファイル内容diff
-							hashLogs = append(hashLogs, fmt.Sprintf("%s: Each hash(sha256) is not equal:\n  %s: %s\n  %s: %s",
+							hashLogs = append(hashLogs, fmt.Sprintf("%s: Each BMSFile text(sha256 hash) is not equal:\n  %s: %s\n  %s: %s",
 								comFiles1[i1].Path, dirPath1, comFiles1[i1].BmsFileData.Sha256, dirPath2, comFiles2[i2].BmsFileData.Sha256))
+						}
+					}
+					if comFiles1[i1].Text != nil && comFiles2[i2].Text != nil {
+						if *(comFiles1[i1].Text) != *(comFiles2[i2].Text) {
+							textLogs = append(textLogs, fmt.Sprintf("%s: Each text is not equal", comFiles1[i1].Path))
 						}
 					}
 					i2init = i2 + 1
@@ -123,7 +147,7 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (logs []string, _ error) {
 		}
 	}
 
-	logs = append(hashLogs, append(missingLogs1, missingLogs2...)...)
+	logs = append(hashLogs, append(textLogs, append(missingLogs1, missingLogs2...)...)...)
 
 	return logs, nil
 }
