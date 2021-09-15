@@ -370,11 +370,19 @@ func (al AlertLevel) String_ja() string {
 	return ""
 }
 
+type SubLogType int
+
+const (
+	List SubLogType = iota
+	Detail
+)
+
 type Log struct {
 	Level      AlertLevel
 	Message    string
 	Message_ja string
 	SubLogs    []string
+	SubLogType SubLogType
 }
 
 func newLog(level AlertLevel, message string) *Log {
@@ -386,7 +394,7 @@ func newLog(level AlertLevel, message string) *Log {
 func (log Log) String() string {
 	return log.StringWithLang("en")
 }
-func (log Log) StringWithLang(lang string) string {
+func (log Log) StringWithLang(lang string) (str string) {
 	//lang = "ja"
 	level := string(log.Level)
 	message := log.Message
@@ -394,9 +402,23 @@ func (log Log) StringWithLang(lang string) string {
 		message = log.Message_ja
 		level = log.Level.String_ja()
 	}
-	str := level + ": " + message
-	for _, subLog := range log.SubLogs {
-		str += "\n  " + subLog
+	if len(log.SubLogs) > 0 {
+		// ListならログにSubLogをくっつけて複製、Detailならログの次にSubLogを補足ログとして追加
+		if log.SubLogType == List {
+			for i, subLog := range log.SubLogs {
+				str += level + ": " + message + ": " + subLog
+				if i < len(log.SubLogs)-1 {
+					str += "\n"
+				}
+			}
+		} else {
+			str += level + ": " + message
+			for _, subLog := range log.SubLogs {
+				str += "\n  " + subLog
+			}
+		}
+	} else {
+		str += level + ": " + message
 	}
 	return str
 }

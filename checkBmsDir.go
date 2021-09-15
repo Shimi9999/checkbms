@@ -134,6 +134,7 @@ func (nd notUnifiedDefinitions) Log() Log {
 		Message:    fmt.Sprintf("#%s is not unified", strings.ToUpper(nd.command)),
 		Message_ja: fmt.Sprintf("#%sは統一されていません", strings.ToUpper(nd.command)),
 		SubLogs:    []string{},
+		SubLogType: Detail,
 	}
 	for _, def := range nd.defs {
 		log.SubLogs = append(log.SubLogs, fmt.Sprintf("%s: %s", def.bmsFilePath, def.value))
@@ -271,6 +272,7 @@ func (sb sameHashBmsFiles) Log() Log {
 		Message:    "These bmsfiles are same",
 		Message_ja: "これらのBMSファイルは同一です",
 		SubLogs:    []string{},
+		SubLogType: Detail,
 	}
 	log.SubLogs = append(log.SubLogs, sb.paths...)
 	return log
@@ -314,6 +316,7 @@ func (dd definitionDiff) Log() Log {
 		Message:    fmt.Sprintf("There are %d differences in %s definitions: %s %s", len(dd.missingDefs), dd.oType.string(), dd.pathI, dd.pathJ),
 		Message_ja: fmt.Sprintf("%s定義に%d個の違いがあります: %s %s", dd.oType.string(), len(dd.missingDefs), dd.pathI, dd.pathJ),
 		SubLogs:    []string{},
+		SubLogType: Detail,
 	}
 	for _, mDef := range dd.missingDefs {
 		log.SubLogs = append(log.SubLogs, fmt.Sprintf("Missing(%s): %s", mDef.path, mDef.value)) // TODO 日本語対応
@@ -379,6 +382,7 @@ func (od objectDiff) Log() Log {
 		Message:    fmt.Sprintf("There are %d differences in %s objects: %s, %s", len(od.missingObjs), od.oType.string(), od.pathI, od.pathJ),
 		Message_ja: fmt.Sprintf("%sオブジェに%d個の違いがあります: %s %s", od.oType.string(), len(od.missingObjs), od.pathI, od.pathJ),
 		SubLogs:    []string{},
+		SubLogType: Detail,
 	}
 	for _, mObj := range od.missingObjs {
 		log.SubLogs = append(log.SubLogs, fmt.Sprintf("Missing(%s): %s", mObj.path, mObj.value)) // TODO 日本語対応

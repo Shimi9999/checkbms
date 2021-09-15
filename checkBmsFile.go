@@ -505,7 +505,7 @@ func (nwd noWavExtDefs) Log() Log {
 			len(nwd.noWavExtDefs), strings.ToUpper(nwd.noWavExtDefs[0].command()), nwd.noWavExtDefs[0].Value),
 		Message_ja: fmt.Sprintf("#WAVに拡張子.wavでない定義があります(*%d): %s %s etc...",
 			len(nwd.noWavExtDefs), strings.ToUpper(nwd.noWavExtDefs[0].command()), nwd.noWavExtDefs[0].Value),
-	} // TODO SUbLogに表示する？必要なさそう
+	} // TODO SubLogに表示する？必要なさそう
 }
 
 func CheckIndexedDefinitionsHaveInvalidValue(bmsFile *BmsFile) (mds []missingIndexedDefinition, eds []emptyDefinition, ivs []invalidValueOfIndexedCommand, nwd *noWavExtDefs) {
@@ -564,6 +564,7 @@ func (wo wavObjsIn0thMeasure) Log() Log {
 		Message:    "Note exists in 0th measure",
 		Message_ja: "0小節目にノーツが配置されています",
 		SubLogs:    []string{}, //[]SubLog{},
+		SubLogType: List,
 	}
 	for _, wavObj := range wo.wavObjs {
 		//log.SubLogs = append(log.SubLogs, SubLog{Message: fmt.Sprintf("%s", wavObj.string(wo.bmsFile))})
@@ -612,6 +613,7 @@ func (puo *placedUndefinedObj) Log() Log {
 		Message:    fmt.Sprintf("Placed %s object is undefined", puo.oType.string()),
 		Message_ja: fmt.Sprintf("配置されている%sオブジェが未定義です", puo.oType.string()),
 		SubLogs:    []string{}, //[]SubLog{},
+		SubLogType: List,
 	}
 	if puo.objValues == nil {
 		puo.initObjValues()
@@ -634,6 +636,7 @@ func (duo definedUnplacedObj) Log() Log {
 		Message:    fmt.Sprintf("Defined %s object is not placed", duo.oType.string()),
 		Message_ja: fmt.Sprintf("定義されている%sオブジェが未配置です", duo.oType.string()),
 		SubLogs:    []string{}, //[]SubLog{},
+		SubLogType: List,
 	}
 	for _, def := range duo.defs {
 		//log.SubLogs = append(log.SubLogs, SubLog{Message: fmt.Sprintf("%s (%s)", strings.ToUpper(def.Index), def.Value)})
