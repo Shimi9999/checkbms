@@ -23,7 +23,7 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (logs []string, _ error) {
 
 	bmsDirs := [dirlen]Directory{}
 	for i, dirPath := range dirPaths {
-		bmsDir, err := scanBmsDirectory(dirPath, true, false)
+		bmsDir, err := ScanBmsDirectory(dirPath, true, false)
 		if err != nil {
 			return nil, err
 		}

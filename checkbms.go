@@ -616,7 +616,7 @@ func matchChannel(ch string, channels []string) bool {
 func ScanDirectory(path string) ([]Directory, error) {
 	bmsDirs := []Directory{}
 	if IsBmsDirectory(path) {
-		bmsDir, err := scanBmsDirectory(path, true, true)
+		bmsDir, err := ScanBmsDirectory(path, true, true)
 		if err != nil {
 			return nil, err
 		}
@@ -640,7 +640,7 @@ func ScanDirectory(path string) ([]Directory, error) {
 	return bmsDirs, nil
 }
 
-func scanBmsDirectory(path string, isRootDir, doScan bool) (*Directory, error) {
+func ScanBmsDirectory(path string, isRootDir, doScan bool) (*Directory, error) {
 	dir := newDirectory(path)
 	files, _ := ioutil.ReadDir(path)
 
@@ -665,7 +665,7 @@ func scanBmsDirectory(path string, isRootDir, doScan bool) (*Directory, error) {
 			}
 			dir.BmsFiles = append(dir.BmsFiles, *bmsFile)
 		} else if f.IsDir() {
-			innnerDir, err := scanBmsDirectory(filePath, false, doScan)
+			innnerDir, err := ScanBmsDirectory(filePath, false, doScan)
 			if err != nil {
 				return nil, err
 			}
