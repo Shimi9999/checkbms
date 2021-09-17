@@ -20,7 +20,7 @@ func main() {
 	}
 
 	if len(flag.Args()) == 2 {
-		if err := doDiffBmsDir(flag.Arg(0), flag.Arg(1)); err != nil {
+		if err := doDiffBmsDir(flag.Arg(0), flag.Arg(1), *lang); err != nil {
 			fmt.Println("Error: doDiffBmsDir:", err.Error())
 			os.Exit(1)
 		}
@@ -94,7 +94,7 @@ func doCheckBmsFile(path, lang string) error {
 	return nil
 }
 
-func doDiffBmsDir(dirPath1, dirPath2 string) error {
+func doDiffBmsDir(dirPath1, dirPath2, lang string) error {
 	dirPath1, dirPath2 = filepath.Clean(dirPath1), filepath.Clean(dirPath2)
 	_, err := os.Stat(dirPath1)
 	if err != nil {
@@ -105,12 +105,10 @@ func doDiffBmsDir(dirPath1, dirPath2 string) error {
 		return fmt.Errorf("Error: Path2 is wrong: %s", err.Error())
 	}
 
-	logs, err := checkbms.DiffBmsDirectories(dirPath1, dirPath2)
+	result, err := checkbms.DiffBmsDirectories(dirPath1, dirPath2)
 	if err != nil {
 		return fmt.Errorf("Error: DiffBmsDirectories error: %s", err.Error())
 	}
-	for _, log := range logs {
-		fmt.Println(log)
-	}
+	fmt.Println(result.LogStringWithLang(lang))
 	return nil
 }

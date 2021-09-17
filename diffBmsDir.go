@@ -12,7 +12,7 @@ import (
 // 2つのディレクトリ内のファイル分布が一致するか比較して確認する。比較はファイルパスで行う。
 // 音声、画像、動画ファイルを比較する時は、パスの拡張子を取り除き、名前だけで比較する。
 // bmsfileは同名ファイルでsha256の比較をする。一致しなかった場合はファイル記述内容のdiffをとる。
-func DiffBmsDirectories(dirPath1, dirPath2 string) (logs []string, _ error) {
+func DiffBmsDirectories(dirPath1, dirPath2 string) (result *DiffBmsDirResult, _ error) {
 	const dirlen int = 2
 	dirPaths := [dirlen]string{dirPath1, dirPath2}
 	for _, dirPath := range dirPaths {
@@ -101,11 +101,7 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (logs []string, _ error) {
 		comDirs[i].Directories = sortSliceWithPath(comDirs[i].Directories)
 	}
 
-	hashLogs, textLogs, missingLogs1, missingLogs2 := []string{}, []string{}, []string{}, []string{}
-
-	missingLog := func(dirPath, missingPath string) string {
-		return fmt.Sprintf("%s is missing the file: %s", dirPath, missingPath)
-	}
+	result = &DiffBmsDirResult{}
 	comFileSlices1 := []([]compareFile){comDirs[0].BmsFiles, comDirs[0].AudioFiles, comDirs[0].ImageFiles, comDirs[0].MovieFiles, comDirs[0].OtherFiles, comDirs[0].Directories}
 	comFileSlices2 := []([]compareFile){comDirs[1].BmsFiles, comDirs[1].AudioFiles, comDirs[1].ImageFiles, comDirs[1].MovieFiles, comDirs[1].OtherFiles, comDirs[1].Directories}
 	for i := 0; i < 6; i++ {
@@ -113,41 +109,110 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (logs []string, _ error) {
 		i2init := 0
 		for i1 := 0; i1 < len(comFiles1); i1++ {
 			if i2init == len(comFiles2) {
-				missingLogs2 = append(missingLogs2, missingLog(dirPath2, comFiles1[i1].Path))
+				result.missingFiles2 = append(result.missingFiles2, missingFile{dirPath: dirPath2, missingFilePath: comFiles1[i1].Path})
 				continue
 			}
 			for i2 := i2init; i2 < len(comFiles2); i2++ {
 				if comFiles1[i1].ComparePath == comFiles2[i2].ComparePath {
 					if comFiles1[i1].BmsFileData != nil && comFiles2[i2].BmsFileData != nil {
 						if comFiles1[i1].BmsFileData.Sha256 != comFiles2[i2].BmsFileData.Sha256 {
-							// ここでファイル内容diff
-							hashLogs = append(hashLogs, fmt.Sprintf("%s: Each BMSFile text(sha256 hash) is not equal:\n  %s: %s\n  %s: %s",
-								comFiles1[i1].Path, dirPath1, comFiles1[i1].BmsFileData.Sha256, dirPath2, comFiles2[i2].BmsFileData.Sha256))
+							// TODO: ここでファイル内容diff?
+							result.hashIsNotEquals = append(result.hashIsNotEquals, hashIsNotEqual{
+								path:     comFiles1[i1].Path,
+								dirPath1: dirPath1, bmsFile1: comFiles1[i1].BmsFileData,
+								dirPath2: dirPath2, bmsFile2: comFiles2[i2].BmsFileData,
+							})
 						}
 					}
 					if comFiles1[i1].Text != nil && comFiles2[i2].Text != nil {
 						if *(comFiles1[i1].Text) != *(comFiles2[i2].Text) {
-							textLogs = append(textLogs, fmt.Sprintf("%s: Each text is not equal", comFiles1[i1].Path))
+							result.textIsNotEquals = append(result.textIsNotEquals, textIsNotEqual{path: comFiles1[i1].Path})
 						}
 					}
 					i2init = i2 + 1
 					break
 				} else {
 					if comFiles1[i1].ComparePath < comFiles2[i2].ComparePath {
-						missingLogs2 = append(missingLogs2, missingLog(dirPath2, comFiles1[i1].Path))
+						result.missingFiles2 = append(result.missingFiles2, missingFile{dirPath: dirPath2, missingFilePath: comFiles1[i1].Path})
 						break
 					} else {
-						missingLogs1 = append(missingLogs1, missingLog(dirPath1, comFiles2[i2].Path))
+						result.missingFiles1 = append(result.missingFiles1, missingFile{dirPath: dirPath1, missingFilePath: comFiles2[i2].Path})
 					}
 				}
 			}
 		}
 		for i2 := i2init; i2 < len(comFiles2); i2++ {
-			missingLogs1 = append(missingLogs1, missingLog(dirPath1, comFiles2[i2].Path))
+			result.missingFiles1 = append(result.missingFiles1, missingFile{dirPath: dirPath1, missingFilePath: comFiles2[i2].Path})
 		}
 	}
 
-	logs = append(hashLogs, append(textLogs, append(missingLogs1, missingLogs2...)...)...)
+	return result, nil
+}
 
-	return logs, nil
+type DiffBmsDirResult struct {
+	hashIsNotEquals []hashIsNotEqual
+	textIsNotEquals []textIsNotEqual
+	missingFiles1   []missingFile
+	missingFiles2   []missingFile
+}
+
+func (d DiffBmsDirResult) LogStringWithLang(lang string) (log string) {
+	for _, h := range d.hashIsNotEquals {
+		log += h.Log().StringWithLang(lang) + "\n"
+	}
+	for _, t := range d.textIsNotEquals {
+		log += t.Log().StringWithLang(lang) + "\n"
+	}
+	for _, m1 := range d.missingFiles1 {
+		log += m1.Log().StringWithLang(lang) + "\n"
+	}
+	for _, m2 := range d.missingFiles2 {
+		log += m2.Log().StringWithLang(lang) + "\n"
+	}
+	return log
+}
+
+type hashIsNotEqual struct {
+	path               string
+	dirPath1, dirPath2 string
+	bmsFile1, bmsFile2 *BmsFile
+}
+
+func (h hashIsNotEqual) Log() Log {
+	log := Log{
+		Level:      Error,
+		Message:    fmt.Sprintf("%s: Each BMSFile text(sha256 hash) is not equal", h.path),
+		Message_ja: fmt.Sprintf("%s: それぞれのBMSファイルの内容(sha256ハッシュ)が一致しません", h.path),
+		SubLogs:    []string{},
+		SubLogType: Detail,
+	}
+	log.SubLogs = append(log.SubLogs, fmt.Sprintf("%s: %s", h.dirPath1, h.bmsFile1.Sha256))
+	log.SubLogs = append(log.SubLogs, fmt.Sprintf("%s: %s", h.dirPath2, h.bmsFile2.Sha256))
+	return log
+}
+
+type textIsNotEqual struct {
+	path string
+	// text *string
+}
+
+func (t textIsNotEqual) Log() Log {
+	return Log{
+		Level:      Warning,
+		Message:    fmt.Sprintf("%s: Each text is not equal", t.path),
+		Message_ja: fmt.Sprintf("%s: それぞれのテキストファイルの内容が一致しません", t.path),
+	}
+}
+
+type missingFile struct {
+	dirPath         string
+	missingFilePath string
+}
+
+func (m missingFile) Log() Log {
+	return Log{
+		Level:      Warning,
+		Message:    fmt.Sprintf("%s is missing the file: %s", m.dirPath, m.missingFilePath),
+		Message_ja: fmt.Sprintf("%sに欠落しているファイルがあります: %s", m.dirPath, m.missingFilePath),
+	}
 }
