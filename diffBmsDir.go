@@ -101,7 +101,7 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (result *DiffBmsDirResult, _ 
 		comDirs[i].Directories = sortSliceWithPath(comDirs[i].Directories)
 	}
 
-	result = &DiffBmsDirResult{}
+	result = &DiffBmsDirResult{DirPath1: dirPath1, DirPath2: dirPath2}
 	comFileSlices1 := []([]compareFile){comDirs[0].BmsFiles, comDirs[0].AudioFiles, comDirs[0].ImageFiles, comDirs[0].MovieFiles, comDirs[0].OtherFiles, comDirs[0].Directories}
 	comFileSlices2 := []([]compareFile){comDirs[1].BmsFiles, comDirs[1].AudioFiles, comDirs[1].ImageFiles, comDirs[1].MovieFiles, comDirs[1].OtherFiles, comDirs[1].Directories}
 	for i := 0; i < 6; i++ {
@@ -150,10 +150,11 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (result *DiffBmsDirResult, _ 
 }
 
 type DiffBmsDirResult struct {
-	hashIsNotEquals []hashIsNotEqual
-	textIsNotEquals []textIsNotEqual
-	missingFiles1   []missingFile
-	missingFiles2   []missingFile
+	DirPath1, DirPath2 string
+	hashIsNotEquals    []hashIsNotEqual
+	textIsNotEquals    []textIsNotEqual
+	missingFiles1      []missingFile
+	missingFiles2      []missingFile
 }
 
 func (d DiffBmsDirResult) LogStringWithLang(lang string) (log string) {
