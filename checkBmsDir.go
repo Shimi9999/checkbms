@@ -400,10 +400,12 @@ func CheckObjectStructreisUnified(bmsDir *Directory) (nos []notUnifiedObjectStru
 	}
 	otypes := []objType{Bmp, Wav}
 	for _, otype := range otypes {
-		makeObjStrs := func(objs []bmsObj) (objStrs []string) {
-			for _, obj := range objs {
-				if !obj.IsLNEnd {
-					objStrs = append(objStrs, fmt.Sprintf("%d-%d/%d %s", obj.Measure, obj.Position.Numerator, obj.Position.Denominator, obj.value36()))
+		makeObjStrs := func(bmsFile *BmsFile) (objStrs []string) {
+			for _, obj := range bmsFile.bmsObjs(otype) {
+				if !obj.IsLNEnd && bmsFile.definedValue(otype, obj.value36()) != "" {
+					pos := obj.Position
+					pos.reduce()
+					objStrs = append(objStrs, fmt.Sprintf("%d-%d/%d %s", obj.Measure, pos.Numerator, pos.Denominator, obj.value36()))
 				}
 			}
 			return objStrs
@@ -412,7 +414,7 @@ func CheckObjectStructreisUnified(bmsDir *Directory) (nos []notUnifiedObjectStru
 		for i := range bmsDir.BmsFiles {
 			structures = append(structures, structure{
 				bmsFilePath: relativePathFromBmsRoot(bmsDir.Path, bmsDir.BmsFiles[i].Path),
-				objStrs:     makeObjStrs(bmsDir.BmsFiles[i].bmsObjs(otype))})
+				objStrs:     makeObjStrs(&bmsDir.BmsFiles[i])})
 		}
 
 		groups := [][]string{}
