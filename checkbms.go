@@ -3,7 +3,7 @@ package checkbms
 import (
 	"crypto/sha256"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"math/big"
 	"os"
@@ -622,7 +622,7 @@ func ScanDirectory(path string) ([]Directory, error) {
 		}
 		bmsDirs = append(bmsDirs, *bmsDir)
 	} else {
-		files, err := ioutil.ReadDir(path)
+		files, err := os.ReadDir(path)
 		if err != nil {
 			return nil, err
 		}
@@ -642,7 +642,7 @@ func ScanDirectory(path string) ([]Directory, error) {
 
 func ScanBmsDirectory(path string, isRootDir, doScan bool) (*Directory, error) {
 	dir := newDirectory(path)
-	files, _ := ioutil.ReadDir(path)
+	files, _ := os.ReadDir(path)
 
 	for _, f := range files {
 		filePath := filepath.Join(path, f.Name())
@@ -689,7 +689,7 @@ func ReadBmsFile(path string) (*BmsFile, error) {
 
 	bmsFile := newBmsFile(path)
 
-	fullText, err := ioutil.ReadAll(file)
+	fullText, err := io.ReadAll(file)
 	if err != nil {
 		return nil, fmt.Errorf("BMSfile ReadAll error: " + err.Error())
 	}
@@ -893,7 +893,7 @@ func IsBmsFile(path string) bool {
 }
 
 func IsBmsDirectory(path string) bool {
-	files, err := ioutil.ReadDir(path)
+	files, err := os.ReadDir(path)
 	if err != nil {
 		return false
 	}

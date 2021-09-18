@@ -2,7 +2,7 @@ package checkbms
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -76,7 +76,7 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (result *DiffBmsDirResult, _ 
 						return nil, fmt.Errorf("text open error: " + err.Error())
 					}
 					defer file.Close()
-					fullText, err := ioutil.ReadAll(file)
+					fullText, err := io.ReadAll(file)
 					if err != nil {
 						return nil, fmt.Errorf("text ReadAll error: " + err.Error())
 					}
