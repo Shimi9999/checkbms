@@ -170,6 +170,13 @@ func (d DiffBmsDirResult) LogStringWithLang(lang string) (log string) {
 	for _, m2 := range d.missingFiles2 {
 		log += m2.Log().StringWithLang(lang) + "\n"
 	}
+	if log != "" {
+		if lang == "ja" {
+			log = fmt.Sprintf("# BMSフォルダ 差分ログ: %s %s\n", d.DirPath1, d.DirPath2) + log
+		} else {
+			log = fmt.Sprintf("# BmsDirectory difflog: %s %s\n", d.DirPath1, d.DirPath2) + log
+		}
+	}
 	return log
 }
 
