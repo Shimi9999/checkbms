@@ -168,7 +168,7 @@ func (bf BmsFile) bmsObjs(t objType) []bmsObj {
 	case Wav:
 		return bf.BmsWavObjs
 	case Bmp:
-		return bf.BmsBpmObjs
+		return bf.BmsBmpObjs
 	case Mine:
 		return bf.BmsMineObjs
 	case Bpm:
@@ -850,6 +850,14 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 	}
 
 	for _, result := range CheckSameHashBmsFiles(bmsDir) {
+		bmsDir.Logs = append(bmsDir.Logs, result.Log())
+	}
+
+	for _, result := range CheckIndexedDefinitionAreUnified(bmsDir) {
+		bmsDir.Logs = append(bmsDir.Logs, result.Log())
+	}
+
+	for _, result := range CheckObjectStructreisUnified(bmsDir) {
 		bmsDir.Logs = append(bmsDir.Logs, result.Log())
 	}
 
