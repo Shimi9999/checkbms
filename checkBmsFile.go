@@ -798,7 +798,7 @@ func (on overlapNotes) Log() Log {
 	return Log{
 		Level:      Error,
 		Message:    fmt.Sprintf("Placed notes overlap: %s", overlapStr),
-		Message_ja: fmt.Sprintf("配置されているノーツが重複しています: %s", overlapStr),
+		Message_ja: fmt.Sprintf("配置されているノーツが重なり合っています: %s", overlapStr),
 	}
 }
 

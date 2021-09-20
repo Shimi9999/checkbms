@@ -69,7 +69,7 @@ func (nf notExistFile) Log() Log {
 	return Log{
 		Level:      nf.level,
 		Message:    fmt.Sprintf("Defined file does not exist(%s): #%s %s", relativePathFromBmsRoot(nf.dirPath, nf.bmsPath), strings.ToUpper(nf.command), nf.filePath),
-		Message_ja: fmt.Sprintf("定義されているファイルは実在しません(%s): #%s %s", relativePathFromBmsRoot(nf.dirPath, nf.bmsPath), strings.ToUpper(nf.command), nf.filePath),
+		Message_ja: fmt.Sprintf("定義されているファイルが実在しません(%s): #%s %s", relativePathFromBmsRoot(nf.dirPath, nf.bmsPath), strings.ToUpper(nf.command), nf.filePath),
 	}
 }
 
@@ -133,7 +133,7 @@ func (nd notUnifiedDefinitions) Log() Log {
 	log := Log{
 		Level:      Warning,
 		Message:    fmt.Sprintf("#%s is not unified", strings.ToUpper(nd.command)),
-		Message_ja: fmt.Sprintf("#%sは統一されていません", strings.ToUpper(nd.command)),
+		Message_ja: fmt.Sprintf("#%sが統一されていません", strings.ToUpper(nd.command)),
 		SubLogs:    []string{},
 		SubLogType: Detail,
 	}
@@ -308,7 +308,7 @@ func (ni notUnifiedIndexedDefinition) Log() Log {
 	log := Log{
 		Level:      Warning,
 		Message:    fmt.Sprintf("#%sxx is not unified", strings.ToUpper(ni.otype.string())),
-		Message_ja: fmt.Sprintf("#%sxxは統一されていません", strings.ToUpper(ni.otype.string())),
+		Message_ja: fmt.Sprintf("#%sxxが統一されていません", strings.ToUpper(ni.otype.string())),
 		SubLogs:    []string{},
 		SubLogType: Detail,
 	}
@@ -376,7 +376,7 @@ func (no notUnifiedObjectStructure) Log() Log {
 	log := Log{
 		Level:      Warning,
 		Message:    fmt.Sprintf("%s object structure is not unified", strings.ToUpper(no.otype.string())),
-		Message_ja: fmt.Sprintf("%sオブジェ構成は統一されていません", strings.ToUpper(no.otype.string())),
+		Message_ja: fmt.Sprintf("%sオブジェ構成が統一されていません", strings.ToUpper(no.otype.string())),
 		SubLogs:    []string{},
 		SubLogType: Detail,
 	}
