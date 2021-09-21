@@ -275,16 +275,19 @@ func (bmsFile *BmsFile) ScanBmsFile() error {
 
 		if (chint >= 11 && chint <= 19) || (chint >= 21 && chint <= 29) ||
 			(chint >= 51 && chint <= 59) || (chint >= 61 && chint <= 69) {
-			if obj.value36() != bmsFile.lnobj() {
-				if (chint >= 51 && chint <= 59) || (chint >= 61 && chint <= 69) {
-					lnCount++
-				} else {
-					bmsFile.TotalNotes++
-				}
+			if (chint >= 51 && chint <= 59) || (chint >= 61 && chint <= 69) || obj.value36() == bmsFile.lnobj() {
+				lnCount++
+			} else {
+				bmsFile.TotalNotes++
 			}
 		}
 	}
-	bmsFile.TotalNotes += lnCount / 2
+	lnmode, _ := strconv.Atoi(bmsFile.Header["lnmode"])
+	if lnmode >= 2 {
+		bmsFile.TotalNotes += lnCount
+	} else {
+		bmsFile.TotalNotes += lnCount / 2
+	}
 
 	if filepath.Ext(bmsFile.Path) == ".pms" {
 		bmsFile.Keymode = 9
