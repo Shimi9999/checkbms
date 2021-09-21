@@ -393,7 +393,7 @@ func (no notUnifiedObjectStructure) Log() Log {
 	return log
 }
 
-func CheckObjectStructreisUnified(bmsDir *Directory) (nos []notUnifiedObjectStructure) {
+func CheckObjectStructreIsUnified(bmsDir *Directory) (nos []notUnifiedObjectStructure) {
 	type structure struct {
 		bmsFilePath string
 		objStrs     []string

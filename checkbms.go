@@ -857,7 +857,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 		bmsDir.Logs = append(bmsDir.Logs, result.Log())
 	}
 
-	for _, result := range CheckObjectStructreisUnified(bmsDir) {
+	for _, result := range CheckObjectStructreIsUnified(bmsDir) {
 		bmsDir.Logs = append(bmsDir.Logs, result.Log())
 	}
 
