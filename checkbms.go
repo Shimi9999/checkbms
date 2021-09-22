@@ -60,11 +60,6 @@ func (d Directory) LogStringWithLang(base bool, lang string) string {
 	return str
 }
 
-type definition struct {
-	Command string
-	Value   string
-}
-
 type indexedDefinition struct {
 	CommandName string
 	Index       string
@@ -385,12 +380,6 @@ type Log struct {
 	SubLogType SubLogType
 }
 
-func newLog(level AlertLevel, message string) *Log {
-	var log Log
-	log.Level = level
-	log.Message = message
-	return &log
-}
 func (log Log) String() string {
 	return log.StringWithLang("en")
 }
@@ -424,10 +413,6 @@ func (log Log) StringWithLang(lang string) (str string) {
 }
 
 type Logs []Log
-
-func (logs *Logs) addNewLog(level AlertLevel, message string) {
-	*logs = append(*logs, *newLog(level, message))
-}
 
 /*func (logs *Logs) addLogFromResult(result interface{}) {
 	//fmt.Println(reflect.TypeOf(result), reflect.TypeOf(result).Implements(cr), reflect.TypeOf(result).Elem().Implements(cr))

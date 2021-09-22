@@ -24,11 +24,6 @@ func relativePathFromBmsRoot(dirPath, path string) string {
 	return relativePath
 }
 
-func relativeToLower(dirPath, path string) string { // TODO なぜToLowerしている？この関数の意味は？
-	relative := strings.ToLower(relativePathFromBmsRoot(dirPath, path))
-	return path[:len(path)-len(relative)] + relative
-}
-
 // pathのファイルがbmsDir.NonBmsFilesに含まれているかを返す。ついでにNonBmsFileのUsedをonにする。
 func containsInNonBmsFiles(bmsDir *Directory, path string, exts []string) bool {
 	contains := false // 拡張子補完の対称ファイルを全てUsedにする
