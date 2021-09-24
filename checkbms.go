@@ -14,6 +14,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/Shimi9999/checkbms/bmson"
 	"github.com/saintfish/chardet"
 )
 
@@ -23,7 +24,8 @@ type File struct {
 
 type Directory struct {
 	File
-	BmsFiles []BmsFile
+	BmsFiles   []BmsFile
+	BmsonFiles []BmsonFile
 	/*SoundFiles []NonBmsFile
 	ImageFiles []NonBmsFile  // TODO
 	OtherFiles []NonBmsFile*/
@@ -137,9 +139,9 @@ type BmsFile struct {
 	Bms
 }
 
-func newBmsFile(path string) *BmsFile {
+func NewBmsFile(bmsFileBase *BmsFileBase) *BmsFile {
 	var bf BmsFile
-	bf.Path = path
+	bf.BmsFileBase = *bmsFileBase
 	bf.Header = make(map[string]string)
 	return &bf
 }
@@ -236,6 +238,37 @@ func (bf BmsFile) LogStringWithLang(base bool, lang string) string {
 			str += fmt.Sprintf("# BMSファイル チェックログ: %s\n", path)
 		} else {
 			str += fmt.Sprintf("# BmsFile checklog: %s\n", path)
+		}
+		str += bf.Logs.StringWithLang(lang)
+	}
+	return str
+}
+
+type BmsonFile struct {
+	BmsFileBase
+	bmson.Bmson
+	IsInvalid bool // bmsonフォーマットエラーで無効なファイル
+}
+
+func NewBmsonFile(bmsFileBase *BmsFileBase) *BmsonFile {
+	var bf BmsonFile
+	bf.BmsFileBase = *bmsFileBase
+	return &bf
+}
+func (bf BmsFileBase) LogString(base bool) string {
+	return bf.LogStringWithLang(base, "en")
+}
+func (bf BmsFileBase) LogStringWithLang(base bool, lang string) string {
+	str := ""
+	if len(bf.Logs) > 0 {
+		path := bf.Path
+		if base {
+			path = filepath.Base(bf.Path)
+		}
+		if lang == "ja" {
+			str += fmt.Sprintf("# BMSONファイル チェックログ: %s\n", path)
+		} else {
+			str += fmt.Sprintf("# BmsonFile checklog: %s\n", path)
 		}
 		str += bf.Logs.StringWithLang(lang)
 	}
@@ -486,7 +519,7 @@ func (c Command) isInRange(value string) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		if bv, ok := c.BoundaryValue.([]int); ok && len(bv) >= 2 {
+		if bv, ok := c.BoundaryValue.([]int); ok && len(bv) == 2 {
 			if intValue >= bv[0] && intValue <= bv[1] {
 				return true, nil
 			} else {
@@ -500,7 +533,7 @@ func (c Command) isInRange(value string) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		if bv, ok := c.BoundaryValue.([]float64); ok && len(bv) >= 2 {
+		if bv, ok := c.BoundaryValue.([]float64); ok && len(bv) == 2 {
 			if floatValue >= bv[0] && floatValue <= bv[1] {
 				return true, nil
 			} else {
@@ -513,9 +546,11 @@ func (c Command) isInRange(value string) (bool, error) {
 		if c.BoundaryValue == nil {
 			return true, nil
 		}
-		if bv, ok := c.BoundaryValue.([]string); ok && len(bv) >= 1 {
-			if regexp.MustCompile(bv[0]).MatchString(value) { // 条件複数個にする？単数にする？
-				return true, nil
+		if bvs, ok := c.BoundaryValue.([]string); ok && len(bvs) >= 1 {
+			for _, bv := range bvs {
+				if regexp.MustCompile(bv).MatchString(value) {
+					return true, nil
+				}
 			}
 		} else {
 			return false, invalidError
@@ -641,23 +676,29 @@ func ScanBmsDirectory(path string, isRootDir, doScan bool) (*Directory, error) {
 	for _, f := range files {
 		filePath := filepath.Join(path, f.Name())
 		if isRootDir && IsBmsFile(f.Name()) { // TODO isRootDirいる？on/off付ける？
-			bmsFile, err := ReadBmsFile(filePath) // allTextを読み込む&sha256を生成
+			bmsFileBase, err := ReadBmsFileBase(filePath)
 			if err != nil {
 				return nil, err
 			}
-			if doScan {
-				if filepath.Ext(filePath) == ".bmson" {
-					// TODO loadBmson作る
-					// bmsfile, err := LoadBmson(bmspath)
-					continue
-				} else {
+			if IsBmsonFile(filePath) {
+				bmsonFile := NewBmsonFile(bmsFileBase)
+				if doScan {
+					err := bmsonFile.ScanBmsonFile()
+					if err != nil {
+						return nil, err
+					}
+				}
+				dir.BmsonFiles = append(dir.BmsonFiles, *bmsonFile)
+			} else {
+				bmsFile := NewBmsFile(bmsFileBase)
+				if doScan {
 					err := bmsFile.ScanBmsFile()
 					if err != nil {
 						return nil, err
 					}
 				}
+				dir.BmsFiles = append(dir.BmsFiles, *bmsFile)
 			}
-			dir.BmsFiles = append(dir.BmsFiles, *bmsFile)
 		} else if f.IsDir() {
 			innnerDir, err := ScanBmsDirectory(filePath, false, doScan)
 			if err != nil {
@@ -674,23 +715,24 @@ func ScanBmsDirectory(path string, isRootDir, doScan bool) (*Directory, error) {
 	return dir, nil
 }
 
-func ReadBmsFile(path string) (*BmsFile, error) {
+func ReadBmsFileBase(path string) (bmsFileBase *BmsFileBase, _ error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("BMSfile open error: " + err.Error())
 	}
 	defer file.Close()
 
-	bmsFile := newBmsFile(path)
+	bmsFileBase = &BmsFileBase{}
+	bmsFileBase.Path = path
 
 	fullText, err := io.ReadAll(file)
 	if err != nil {
 		return nil, fmt.Errorf("BMSfile ReadAll error: " + err.Error())
 	}
-	bmsFile.FullText = fullText
-	bmsFile.Sha256 = fmt.Sprintf("%x", sha256.Sum256(bmsFile.FullText))
+	bmsFileBase.FullText = fullText
+	bmsFileBase.Sha256 = fmt.Sprintf("%x", sha256.Sum256(bmsFileBase.FullText))
 
-	return bmsFile, nil
+	return bmsFileBase, nil
 }
 
 func CheckBmsFile(bmsFile *BmsFile) {
@@ -883,6 +925,11 @@ func hasExts(path string, exts []string) bool {
 
 func IsBmsFile(path string) bool {
 	bmsExts := []string{".bms", ".bme", ".bml", ".pms", ".bmson"}
+	return hasExts(path, bmsExts)
+}
+
+func IsBmsonFile(path string) bool {
+	bmsExts := []string{".bmson"}
 	return hasExts(path, bmsExts)
 }
 

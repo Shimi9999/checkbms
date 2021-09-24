@@ -5,14 +5,59 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/Shimi9999/checkbms/bmson"
 )
 
-func ScanBmson(bytes []byte) (*bmson.Bmson, error) {
-	logs := Logs{}
+func (bmsonFile *BmsonFile) ScanBmsonFile() error {
+	if bmsonFile.FullText == nil {
+		return fmt.Errorf("FullText is empty: %s", bmsonFile.Path)
+	}
 
+	bmsonData, logs, err := ScanBmson(bmsonFile.FullText)
+	bmsonFile.Logs = logs
+	if err != nil {
+		bmsonFile.IsInvalid = true
+		return err
+	}
+	bmsonFile.Bmson = *bmsonData
+
+	// getKeymode
+	func() {
+		if keymodeMatch := regexp.MustCompile(`-(\d+)k`).FindStringSubmatch(bmsonData.Info.Mode_hint); keymodeMatch != nil {
+			keymode, _ := strconv.Atoi(keymodeMatch[1])
+			bmsonFile.Keymode = keymode
+		}
+	}()
+
+	// countTotalNotes
+	func() {
+		notesMap := map[string]bmson.Note{}
+		for _, ch := range bmsonData.Sound_channels {
+			for _, note := range ch.Notes {
+				x, isFloat64 := note.X.(float64)
+				if isFloat64 && x-math.Floor(x) == 0 && x > 0 && !note.Up {
+					key := fmt.Sprintf("%d-%d", int(x), note.Y)
+					notesMap[key] = note
+				}
+			}
+		}
+		totalNotes := len(notesMap)
+		for _, note := range notesMap {
+			if note.L > 0 && (note.T >= 2 || note.T != 1 && bmsonData.Info.Ln_type >= 2) {
+				totalNotes++
+			}
+		}
+		bmsonFile.TotalNotes = totalNotes
+	}()
+
+	return nil
+}
+
+func ScanBmson(bytes []byte) (bmsonData *bmson.Bmson, logs Logs, _ error) {
 	var bmsonObj interface{}
 	if err := json.Unmarshal(bytes, &bmsonObj); err != nil {
 		logs = append(logs, Log{
@@ -23,7 +68,7 @@ func ScanBmson(bytes []byte) (*bmson.Bmson, error) {
 		for _, log := range logs {
 			fmt.Println(log.String())
 		}
-		return nil, nil
+		return nil, logs, err
 	}
 
 	invalidKeyLog := func(key string, value interface{}, locationKey string) {
@@ -143,14 +188,113 @@ func ScanBmson(bytes []byte) (*bmson.Bmson, error) {
 		return reflect.Value{}
 	}
 
-	bmsonData := &bmson.Bmson{}
 	bmsonData = load(bmsonObj, reflect.TypeOf(bmsonData), "bmson").Interface().(*bmson.Bmson)
-	//fmt.Printf("bmsonData: %+v\n", bmsonData)
-	/*fmt.Printf("bmsonDataInfo: %+v\n", bmsonData.Info)
 
-	for _, log := range logs {
-		fmt.Println(log.String())
-	}*/
+	return bmsonData, logs, nil
+}
 
-	return nil, nil
+func CheckBmsonFile(bmsonFile *BmsonFile) {
+	if logs := CheckBmsonInfo(bmsonFile); len(logs) > 0 {
+		bmsonFile.Logs = append(bmsonFile.Logs, logs...)
+	}
+}
+
+var infoFields = []Command{
+	{"title", String, Necessary, nil},
+	{"subtitle", String, Unnecessary, nil},
+	{"artist", String, Semi_necessary, nil},
+	{"subartists", String, Unnecessary, nil}, // Strings型用意する?
+	{"genre", String, Semi_necessary, nil},
+	{"mode_hint", String, Semi_necessary, []string{`^beat-\d+k$`, `^popn-\d+k$`, `^keyboard-\d+k$`, `generic-\d+keys$`}},
+	{"chart_name", String, Unnecessary, nil},
+	{"level", Int, Semi_necessary, []int{0, math.MaxInt64}},
+	{"init_bpm", Float, Necessary, []float64{math.SmallestNonzeroFloat64, math.MaxFloat64}},
+	{"judge_rank", Float, Semi_necessary, []float64{math.SmallestNonzeroFloat64, math.MaxFloat64}},
+	{"total", Float, Semi_necessary, []float64{0, math.MaxFloat64}},
+	{"back_image", Path, Unnecessary, IMAGE_EXTS},
+	{"eyecatch_image", Path, Unnecessary, IMAGE_EXTS},
+	{"title_image", Path, Unnecessary, IMAGE_EXTS},
+	{"banner_image", Path, Unnecessary, IMAGE_EXTS},
+	{"preview_music", Path, Unnecessary, AUDIO_EXTS},
+	{"resolution", Int, Unnecessary, []int{1, math.MaxInt64}},
+	{"ln_type", Int, Unnecessary, []int{0, 3}},
+}
+
+func CheckBmsonInfo(bmsonFile *BmsonFile) (logs Logs) {
+	iv := reflect.ValueOf(bmsonFile.Info).Elem()
+	it := iv.Type()
+	for i := 0; i < iv.NumField(); i++ {
+		ft := it.Field(i)
+		fv := iv.Field(i)
+		keyName := strings.ToLower(ft.Name)
+
+		isEmptyValue := func(val reflect.Value) bool {
+			return ft.Type.Kind() == reflect.String && fv.String() == ""
+		}
+
+		isInvalidValue := func(val reflect.Value) (_ bool, valStr string) {
+			switch ft.Type.Kind() {
+			case reflect.String:
+				valStr = fv.String()
+			case reflect.Int:
+				valStr = strconv.Itoa(int(fv.Int()))
+			case reflect.Float64:
+				valStr = strconv.FormatFloat(fv.Float(), 'f', -1, 64)
+			case reflect.Slice:
+				for j := 0; j < fv.Len(); j++ {
+					if fv.Index(j).Type().Kind() == reflect.String {
+						if valStr != "" {
+							valStr += " "
+						}
+						valStr += fv.Index(j).String()
+					}
+				}
+			}
+			isInRange, err := infoFields[i].isInRange(valStr)
+			return err != nil || !isInRange, valStr
+		}
+
+		if isEmptyValue(fv) {
+			if infoFields[i].Necessity != Unnecessary {
+				logs = append(logs, Log{
+					Level:      Warning,
+					Message:    fmt.Sprintf("info.%s value is empty", keyName),
+					Message_ja: fmt.Sprintf("info.%sの値が空です", keyName),
+				})
+			}
+		} else if is, valStr := isInvalidValue(fv); is {
+			logs = append(logs, Log{
+				Level:      Error,
+				Message:    fmt.Sprintf("info.%s has invalid value: %s", keyName, valStr),
+				Message_ja: fmt.Sprintf("info.%sが無効な値です: %s", keyName, valStr),
+			})
+		} else if keyName == "total" {
+			bmsonTotal := fv.Float()
+			total := CalculateDefaultTotal(bmsonFile.TotalNotes, bmsonFile.Keymode) * bmsonTotal / 100
+			if total < 100 {
+				logs = append(logs, Log{
+					Level:      Warning,
+					Message:    fmt.Sprintf("Real total value is under 100: %f", total),
+					Message_ja: fmt.Sprintf("実際のTotal値が100未満です: %f", total),
+				})
+			} else if bmsonFile.TotalNotes > 0 {
+				totalJudge := JudgeOverTotal(total, bmsonFile.TotalNotes, bmsonFile.Keymode)
+				if totalJudge > 0 {
+					logs = append(logs, Log{
+						Level:      Notice,
+						Message:    fmt.Sprintf("Real total value is very high(TotalNotes=%d): %f", bmsonFile.TotalNotes, total),
+						Message_ja: fmt.Sprintf("実際のTotal値がかなり高いです(トータルノーツ=%d): %f", bmsonFile.TotalNotes, total),
+					})
+				} else if totalJudge < 0 {
+					logs = append(logs, Log{
+						Level:      Notice,
+						Message:    fmt.Sprintf("Real total value is very low(TotalNotes=%d): %f", bmsonFile.TotalNotes, total),
+						Message_ja: fmt.Sprintf("実際のTotal値がかなり低いです(トータルノーツ=%d): %f", bmsonFile.TotalNotes, total),
+					})
+				}
+			}
+		}
+	}
+
+	return logs
 }

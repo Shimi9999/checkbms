@@ -69,6 +69,12 @@ func doCheckBmsDirectory(path string, doDiffCheck bool, lang string) error {
 				log += "\n\n"
 			}
 		}
+		for _, bmsonFile := range dir.BmsonFiles {
+			if len(bmsonFile.Logs) > 0 {
+				log += bmsonFile.LogStringWithLang(false, lang)
+				log += "\n\n"
+			}
+		}
 		if len(dir.Logs) > 0 {
 			log += dir.LogStringWithLang(false, lang)
 			log += "\n\n"
@@ -79,17 +85,30 @@ func doCheckBmsDirectory(path string, doDiffCheck bool, lang string) error {
 }
 
 func doCheckBmsFile(path, lang string) error {
-	bmsFile, err := checkbms.ReadBmsFile(path)
+	bmsFileBase, err := checkbms.ReadBmsFileBase(path)
 	if err != nil {
 		return fmt.Errorf("Error: ReadBmsFile error: %s", err.Error())
 	}
-	err = bmsFile.ScanBmsFile()
-	if err != nil {
-		return fmt.Errorf("Error: ScanBmsFile error: %s", err.Error())
-	}
-	checkbms.CheckBmsFile(bmsFile)
-	if len(bmsFile.Logs) > 0 {
-		fmt.Println(bmsFile.LogStringWithLang(false, lang))
+	if checkbms.IsBmsonFile(path) {
+		bmsonFile := checkbms.NewBmsonFile(bmsFileBase)
+		err = bmsonFile.ScanBmsonFile()
+		if err != nil {
+			return fmt.Errorf("Error: ScanBmsonFile error: %s", err.Error())
+		}
+		checkbms.CheckBmsonFile(bmsonFile)
+		if len(bmsonFile.Logs) > 0 {
+			fmt.Println(bmsonFile.LogStringWithLang(false, lang))
+		}
+	} else {
+		bmsFile := checkbms.NewBmsFile(bmsFileBase)
+		err = bmsFile.ScanBmsFile()
+		if err != nil {
+			return fmt.Errorf("Error: ScanBmsFile error: %s", err.Error())
+		}
+		checkbms.CheckBmsFile(bmsFile)
+		if len(bmsFile.Logs) > 0 {
+			fmt.Println(bmsFile.LogStringWithLang(false, lang))
+		}
 	}
 	return nil
 }
