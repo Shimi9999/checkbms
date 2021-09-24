@@ -335,6 +335,23 @@ func (md missingDefinition) Log() Log {
 	}
 }*/
 
+// TOTALが過剰な値か判別する
+// -1: 低すぎ
+// 0: 適正
+// 1: 高すぎ
+func JudgeOverTotal(total float64, totalNotes, keymode int) int {
+	// TODO 適切な基準値は？
+	defaultTotal := CalculateDefaultTotal(totalNotes, keymode)
+	totalPerNotes := total / float64(totalNotes)
+	overRate := 1.6
+	if total > defaultTotal*overRate && totalPerNotes > 0.35 {
+		return 1
+	} else if total < defaultTotal/overRate && totalPerNotes < 0.2 {
+		return -1
+	}
+	return 0
+}
+
 func CheckHeaderCommands(bmsFile *BmsFile) (logs Logs) {
 	for _, command := range COMMANDS {
 		val, ok := bmsFile.Header[command.Name]
@@ -391,16 +408,14 @@ func CheckHeaderCommands(bmsFile *BmsFile) (logs Logs) {
 					Message_ja: fmt.Sprintf("#TOTALが100未満です: %s", val),
 				})
 			} else if bmsFile.TotalNotes > 0 {
-				defaultTotal := bmsFile.calculateDefaultTotal()
-				overRate := 1.6
-				totalPerNotes := total / float64(bmsFile.TotalNotes) // TODO 適切な基準値は？
-				if total > defaultTotal*overRate && totalPerNotes > 0.35 {
+				totalJudge := JudgeOverTotal(total, bmsFile.TotalNotes, bmsFile.Keymode)
+				if totalJudge > 0 {
 					logs = append(logs, Log{
 						Level:      Notice,
 						Message:    fmt.Sprintf("#TOTAL is very high(TotalNotes=%d): %s", bmsFile.TotalNotes, val),
 						Message_ja: fmt.Sprintf("#TOTALがかなり高いです(トータルノーツ=%d): %s", bmsFile.TotalNotes, val),
 					})
-				} else if total < defaultTotal/overRate && totalPerNotes < 0.2 {
+				} else if totalJudge < 0 {
 					logs = append(logs, Log{
 						Level:      Notice,
 						Message:    fmt.Sprintf("#TOTAL is very low(TotalNotes=%d): %s", bmsFile.TotalNotes, val),

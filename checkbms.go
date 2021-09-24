@@ -135,14 +135,6 @@ func newBmsFile(path string) *BmsFile {
 	bf.Header = make(map[string]string)
 	return &bf
 }
-func (bf BmsFile) calculateDefaultTotal() float64 {
-	tn := float64(bf.TotalNotes)
-	if bf.Keymode >= 24 {
-		return math.Max(300.0, 7.605*(tn+100.0)/(0.01*tn+6.5))
-	} else {
-		return math.Max(260.0, 7.605*tn/(0.01*tn+6.5))
-	}
-}
 func (bf BmsFile) headerIndexedDefs(t objType) []indexedDefinition {
 	switch t {
 	case Wav:
@@ -240,6 +232,15 @@ func (bf BmsFile) LogStringWithLang(base bool, lang string) string {
 		str += bf.Logs.StringWithLang(lang)
 	}
 	return str
+}
+
+func CalculateDefaultTotal(totalNotes, keymode int) float64 {
+	tn := float64(totalNotes)
+	if keymode >= 24 {
+		return math.Max(300.0, 7.605*(tn+100.0)/(0.01*tn+6.5))
+	} else {
+		return math.Max(260.0, 7.605*tn/(0.01*tn+6.5))
+	}
 }
 
 type NonBmsFile struct {
