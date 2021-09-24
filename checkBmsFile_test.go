@@ -41,7 +41,7 @@ func TestCheckHeaderCommands(t *testing.T) {
 		{
 			name: "all OK",
 			bmsFile: func() *BmsFile {
-				bf := &BmsFile{Header: map[string]string{}}
+				bf := &BmsFile{Bms: Bms{Header: map[string]string{}}}
 				copyAllOkHeader(bf.Header)
 				return bf
 			}(),
@@ -49,7 +49,7 @@ func TestCheckHeaderCommands(t *testing.T) {
 		},
 		{
 			name:    "all missing",
-			bmsFile: &BmsFile{Header: map[string]string{}},
+			bmsFile: &BmsFile{Bms: Bms{Header: map[string]string{}}},
 			want: func() string {
 				str := ""
 				for _, command := range COMMANDS {
@@ -70,7 +70,7 @@ func TestCheckHeaderCommands(t *testing.T) {
 		{
 			name: "all empty",
 			bmsFile: func() *BmsFile {
-				bf := &BmsFile{Header: map[string]string{}}
+				bf := &BmsFile{Bms: Bms{Header: map[string]string{}}}
 				for _, command := range COMMANDS {
 					bf.Header[command.Name] = ""
 				}
@@ -94,7 +94,7 @@ func TestCheckHeaderCommands(t *testing.T) {
 		return &Test{
 			name: name,
 			bmsFile: func() *BmsFile {
-				bf := &BmsFile{Header: map[string]string{}}
+				bf := &BmsFile{Bms: Bms{Header: map[string]string{}}}
 				copyAllOkHeader(bf.Header)
 				for _, s := range hs {
 					bf.Header[s.command] = s.value
@@ -247,50 +247,50 @@ func TestCheckTitleAndSubtitleHaveSameText(t *testing.T) {
 	}{
 		{
 			name: "detect",
-			bmsFile: &BmsFile{Header: map[string]string{
+			bmsFile: &BmsFile{Bms: Bms{Header: map[string]string{
 				"title":    "songtitle another",
 				"subtitle": "another",
-			}},
+			}}},
 			want: &titleAndSubtitleHaveSameText{subtitle: "another"},
 		},
 		{
 			name: "detect2",
-			bmsFile: &BmsFile{Header: map[string]string{
+			bmsFile: &BmsFile{Bms: Bms{Header: map[string]string{
 				"title":    "sHYPER",
 				"subtitle": "hyper",
-			}},
+			}}},
 			want: &titleAndSubtitleHaveSameText{subtitle: "hyper"},
 		},
 		{
 			name: "detect japanese",
-			bmsFile: &BmsFile{Header: map[string]string{
+			bmsFile: &BmsFile{Bms: Bms{Header: map[string]string{
 				"title":    "曲名 アナザー",
 				"subtitle": "アナザー",
-			}},
+			}}},
 			want: &titleAndSubtitleHaveSameText{subtitle: "アナザー"},
 		},
 		{
 			name: "pass",
-			bmsFile: &BmsFile{Header: map[string]string{
+			bmsFile: &BmsFile{Bms: Bms{Header: map[string]string{
 				"title":    "songtitle",
 				"subtitle": "another",
-			}},
+			}}},
 			want: nil,
 		},
 		{
 			name: "pass brackets",
-			bmsFile: &BmsFile{Header: map[string]string{
+			bmsFile: &BmsFile{Bms: Bms{Header: map[string]string{
 				"title":    "songtitle [another]",
 				"subtitle": "another",
-			}},
+			}}},
 			want: nil,
 		},
 		{
 			name: "empty subtitle",
-			bmsFile: &BmsFile{Header: map[string]string{
+			bmsFile: &BmsFile{Bms: Bms{Header: map[string]string{
 				"title":    "test",
 				"subtitle": "",
-			}},
+			}}},
 			want: nil,
 		},
 	}
@@ -334,13 +334,13 @@ func TestCheckIndexedDefinitionsHaveInvalidValue(t *testing.T) {
 		},
 		{
 			name: "empty",
-			bmsFile: &BmsFile{
+			bmsFile: &BmsFile{Bms: Bms{
 				HeaderWav:         []indexedDefinition{{CommandName: "wav", Index: "01", Value: ""}},
 				HeaderBmp:         []indexedDefinition{{CommandName: "bmp", Index: "01", Value: ""}},
 				HeaderExtendedBpm: []indexedDefinition{{CommandName: "bpm", Index: "01", Value: ""}},
 				HeaderStop:        []indexedDefinition{{CommandName: "stop", Index: "01", Value: ""}},
 				HeaderScroll:      []indexedDefinition{{CommandName: "scroll", Index: "01", Value: ""}},
-			},
+			}},
 			wantEds: func() []emptyDefinition {
 				eds := []emptyDefinition{
 					{definition: indexedDefinition{CommandName: "wav", Index: "01", Value: ""}},
@@ -354,7 +354,7 @@ func TestCheckIndexedDefinitionsHaveInvalidValue(t *testing.T) {
 		},
 		{
 			name: "ok",
-			bmsFile: &BmsFile{
+			bmsFile: &BmsFile{Bms: Bms{
 				HeaderWav: []indexedDefinition{
 					{CommandName: "wav", Index: "01", Value: "test.wav"},
 					{CommandName: "wav", Index: "01", Value: ".Wav"},
@@ -384,18 +384,18 @@ func TestCheckIndexedDefinitionsHaveInvalidValue(t *testing.T) {
 					{CommandName: "scroll", Index: "04", Value: strMaxFloat},
 					{CommandName: "scroll", Index: "05", Value: "-" + strMaxFloat},
 				},
-			},
+			}},
 		},
 		{
 			name: "no wav ext",
-			bmsFile: &BmsFile{
+			bmsFile: &BmsFile{Bms: Bms{
 				HeaderWav: []indexedDefinition{
 					{CommandName: "wav", Index: "01", Value: "test.wav"},
 					{CommandName: "wav", Index: "02", Value: "test.ogg"},
 					{CommandName: "wav", Index: "03", Value: "test.mp3"},
 					{CommandName: "wav", Index: "04", Value: "test.flac"},
 				},
-			},
+			}},
 			wantNwd: &noWavExtDefs{noWavExtDefs: []indexedDefinition{
 				{CommandName: "wav", Index: "02", Value: "test.ogg"},
 				{CommandName: "wav", Index: "03", Value: "test.mp3"},
@@ -404,7 +404,7 @@ func TestCheckIndexedDefinitionsHaveInvalidValue(t *testing.T) {
 		},
 	}
 
-	invalidBmsFile := &BmsFile{
+	invalidBmsFile := &BmsFile{Bms: Bms{
 		HeaderWav: []indexedDefinition{
 			{CommandName: "wav", Index: "01", Value: "test"},
 			{CommandName: "wav", Index: "02", Value: "test.wav_"},
@@ -429,7 +429,7 @@ func TestCheckIndexedDefinitionsHaveInvalidValue(t *testing.T) {
 			{CommandName: "scroll", Index: "01", Value: "スクロール"},
 			{CommandName: "scroll", Index: "02", Value: "1/2"},
 		},
-	}
+	}}
 	tests = append(tests, Test{
 		name:    "invalid",
 		bmsFile: invalidBmsFile,

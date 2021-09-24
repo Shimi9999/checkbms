@@ -106,8 +106,16 @@ func (ot objType) string() string {
 	return ""
 }
 
-type BmsFile struct {
+type BmsFileBase struct {
 	File
+	FullText   []byte
+	Sha256     string
+	Keymode    int // 5, 7, 9, 10, 14, 24, 48
+	TotalNotes int
+	Logs       Logs
+}
+
+type Bms struct {
 	Header             map[string]string
 	HeaderWav          []indexedDefinition
 	HeaderBmp          []indexedDefinition
@@ -122,11 +130,11 @@ type BmsFile struct {
 	BmsStopObjs        []bmsObj
 	BmsScrollObjs      []bmsObj
 	BmsMeasureLengths  []measureLength
-	Keymode            int // 5, 7, 9, 10, 14, 24, 48
-	TotalNotes         int
-	Sha256             string
-	FullText           []byte
-	Logs               Logs
+}
+
+type BmsFile struct {
+	BmsFileBase
+	Bms
 }
 
 func newBmsFile(path string) *BmsFile {
