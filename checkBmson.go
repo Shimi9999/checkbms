@@ -219,6 +219,10 @@ func CheckBmsonFile(bmsonFile *BmsonFile) {
 	if logs := CheckBmsonInfo(bmsonFile); len(logs) > 0 {
 		bmsonFile.Logs = append(bmsonFile.Logs, logs...)
 	}
+
+	if result := CheckTotalnotesIsZero(&bmsonFile.BmsFileBase); result != nil {
+		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
+	}
 }
 
 var infoFields = []Command{

@@ -564,8 +564,8 @@ func (tz totalnotesIsZero) Log() Log {
 	}
 }
 
-func CheckTotalnotesIsZero(bmsFile *BmsFile) *totalnotesIsZero {
-	if bmsFile.TotalNotes == 0 {
+func CheckTotalnotesIsZero(bmsFileBase *BmsFileBase) *totalnotesIsZero {
+	if bmsFileBase.TotalNotes == 0 {
 		return &totalnotesIsZero{}
 	}
 	return nil

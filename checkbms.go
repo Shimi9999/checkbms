@@ -760,7 +760,7 @@ func CheckBmsFile(bmsFile *BmsFile) {
 		}
 	}()
 
-	if result := CheckTotalnotesIsZero(bmsFile); result != nil {
+	if result := CheckTotalnotesIsZero(&bmsFile.BmsFileBase); result != nil {
 		bmsFile.Logs = append(bmsFile.Logs, result.Log())
 	}
 
