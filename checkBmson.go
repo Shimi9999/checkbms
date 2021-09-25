@@ -57,12 +57,44 @@ func (bmsonFile *BmsonFile) ScanBmsonFile() error {
 	return nil
 }
 
+type invalidField struct {
+	fieldName    string
+	value        interface{}
+	locationName string
+}
+
+func (i invalidField) Log() Log {
+	val := i.value
+	if str, isString := val.(string); isString {
+		val = fmt.Sprintf("\"%s\"", str)
+	}
+	return Log{
+		Level:      Warning,
+		Message:    fmt.Sprintf("Invalid field name: {\"%s\": %v} in %s", i.fieldName, val, i.locationName),
+		Message_ja: fmt.Sprintf("無効なフィールド名です: {\"%s\": %v} in %s", i.fieldName, val, i.locationName),
+	}
+}
+
+// 型エラー 想定する型と実際の型も表示する？
+type invalidType struct {
+	fieldName string
+	value     interface{}
+}
+
+func (i invalidType) Log() Log {
+	return Log{
+		Level:      Error,
+		Message:    fmt.Sprintf("%s has invalid value: %v", i.fieldName, i.value),
+		Message_ja: fmt.Sprintf("%sが無効な値です: %v", i.fieldName, i.value),
+	}
+}
+
 func ScanBmson(bytes []byte) (bmsonData *bmson.Bmson, logs Logs, _ error) {
 	var bmsonObj interface{}
 	if err := json.Unmarshal(bytes, &bmsonObj); err != nil {
 		logs = append(logs, Log{
 			Level:      Error,
-			Message:    fmt.Sprintf("bmson format is invalid: %s", err.Error()),
+			Message:    fmt.Sprintf("Invalid bmson format: %s", err.Error()),
 			Message_ja: fmt.Sprintf("bmsonのフォーマットが無効です: %s", err.Error()),
 		})
 		for _, log := range logs {
@@ -71,25 +103,8 @@ func ScanBmson(bytes []byte) (bmsonData *bmson.Bmson, logs Logs, _ error) {
 		return nil, logs, err
 	}
 
-	invalidKeyLog := func(key string, value interface{}, locationKey string) {
-		if str, isString := value.(string); isString {
-			value = fmt.Sprintf("\"%s\"", str)
-		}
-		logs = append(logs, Log{
-			Level:      Warning,
-			Message:    fmt.Sprintf("Invalid key: {\"%s\": %v} in %s", key, value, locationKey),
-			Message_ja: fmt.Sprintf("このキーは無効です: {\"%s\": %v} in %s", key, value, locationKey),
-		})
-	}
-
-	// 型エラー 想定する型と実際の型も表示する？
-	invalidTypeLog := func(key string, value interface{}) {
-		logs = append(logs, Log{
-			Level:      Error,
-			Message:    fmt.Sprintf("%s has invalid value: %v", key, value),
-			Message_ja: fmt.Sprintf("%sが無効な値です: %s", key, value),
-		})
-	}
+	ifs := []invalidField{}
+	its := []invalidType{}
 
 	// bmsonのフォーマットチェックをしながら、bmsonデータを読み込む
 	// TODO unmershallのときにmapにまとめられてしまうので、キーの重複が検知できない
@@ -125,7 +140,7 @@ func ScanBmson(bytes []byte) (bmsonData *bmson.Bmson, logs Logs, _ error) {
 						}
 					}
 					if !match {
-						invalidKeyLog(key, val, keyName)
+						ifs = append(ifs, invalidField{key, val, keyName})
 					}
 				}
 				if isPtr && structData.Kind() != reflect.Ptr {
@@ -133,7 +148,7 @@ func ScanBmson(bytes []byte) (bmsonData *bmson.Bmson, logs Logs, _ error) {
 				}
 				return structData
 			} else {
-				invalidTypeLog(keyName, jsonObj)
+				its = append(its, invalidType{keyName, jsonObj})
 			}
 		case reflect.Slice:
 			if sliceVals, isSlice := jsonObj.([]interface{}); isSlice {
@@ -151,35 +166,35 @@ func ScanBmson(bytes []byte) (bmsonData *bmson.Bmson, logs Logs, _ error) {
 				}
 				return sliceData
 			} else {
-				invalidTypeLog(keyName, jsonObj)
+				its = append(its, invalidType{keyName, jsonObj})
 			}
 		case reflect.String:
 			if val, ok := jsonObj.(string); ok {
 				return reflect.ValueOf(&val)
 			} else {
-				invalidTypeLog(keyName, jsonObj)
+				its = append(its, invalidType{keyName, jsonObj})
 			}
 		case reflect.Int:
 			if val, ok := jsonObj.(float64); ok {
 				if val-math.Floor(val) != 0 {
-					invalidTypeLog(keyName, jsonObj)
+					its = append(its, invalidType{keyName, jsonObj})
 				}
 				iVal := int(val)
 				return reflect.ValueOf(&iVal)
 			} else {
-				invalidTypeLog(keyName, jsonObj)
+				its = append(its, invalidType{keyName, jsonObj})
 			}
 		case reflect.Float64:
 			if val, ok := jsonObj.(float64); ok {
 				return reflect.ValueOf(&val)
 			} else {
-				invalidTypeLog(keyName, jsonObj)
+				its = append(its, invalidType{keyName, jsonObj})
 			}
 		case reflect.Bool:
 			if val, ok := jsonObj.(bool); ok {
 				return reflect.ValueOf(&val)
 			} else {
-				invalidTypeLog(keyName, jsonObj)
+				its = append(its, invalidType{keyName, jsonObj})
 			}
 		case reflect.Interface:
 			return reflect.ValueOf(&jsonObj)
@@ -188,7 +203,14 @@ func ScanBmson(bytes []byte) (bmsonData *bmson.Bmson, logs Logs, _ error) {
 		return reflect.Value{}
 	}
 
-	bmsonData = load(bmsonObj, reflect.TypeOf(bmsonData), "bmson").Interface().(*bmson.Bmson)
+	bmsonData = load(bmsonObj, reflect.TypeOf(bmsonData), "root").Interface().(*bmson.Bmson)
+
+	for _, _if := range ifs {
+		logs = append(logs, _if.Log())
+	}
+	for _, it := range its {
+		logs = append(logs, it.Log())
+	}
 
 	return bmsonData, logs, nil
 }
