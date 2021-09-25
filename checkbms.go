@@ -865,6 +865,10 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 		}
 	}
 
+	for i := range bmsDir.BmsonFiles {
+		CheckBmsonFile(&bmsDir.BmsonFiles[i])
+	}
+
 	for _, result := range CheckDefinitionsAreUnified(bmsDir) {
 		bmsDir.Logs = append(bmsDir.Logs, result.Log())
 	}
