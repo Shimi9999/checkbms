@@ -290,28 +290,43 @@ func CheckBmsonInfo(bmsonFile *BmsonFile) (logs Logs) {
 				Message:    fmt.Sprintf("info.%s has invalid value: %s", keyName, valStr),
 				Message_ja: fmt.Sprintf("info.%sが無効な値です: %s", keyName, valStr),
 			})
+		} else if keyName == "judge_rank" {
+			judgeRank := fv.Float()
+			if judgeRank >= 125 {
+				logs = append(logs, Log{
+					Level:      Notice,
+					Message:    fmt.Sprintf("info.judge_rank is very high: %s", formatFloat(judgeRank)),
+					Message_ja: fmt.Sprintf("info.judge_rankがかなり高いです: %s", formatFloat(judgeRank)),
+				})
+			} else if judgeRank <= 50 {
+				logs = append(logs, Log{
+					Level:      Notice,
+					Message:    fmt.Sprintf("info.judge_rank is very low: %s", formatFloat(judgeRank)),
+					Message_ja: fmt.Sprintf("info.judge_rankがかなり低いです: %s", formatFloat(judgeRank)),
+				})
+			}
 		} else if keyName == "total" {
 			bmsonTotal := fv.Float()
 			total := CalculateDefaultTotal(bmsonFile.TotalNotes, bmsonFile.Keymode) * bmsonTotal / 100
 			if total < 100 {
 				logs = append(logs, Log{
 					Level:      Warning,
-					Message:    fmt.Sprintf("Real total value is under 100: %f", total),
-					Message_ja: fmt.Sprintf("実際のTotal値が100未満です: %f", total),
+					Message:    fmt.Sprintf("Real total value is under 100: Real:%.2f Defined:%s", total, formatFloat(bmsonTotal)),
+					Message_ja: fmt.Sprintf("実際のTotal値が100未満です: 実際:%.2f 定義:%s", total, formatFloat(bmsonTotal)),
 				})
 			} else if bmsonFile.TotalNotes > 0 {
 				totalJudge := JudgeOverTotal(total, bmsonFile.TotalNotes, bmsonFile.Keymode)
 				if totalJudge > 0 {
 					logs = append(logs, Log{
 						Level:      Notice,
-						Message:    fmt.Sprintf("Real total value is very high(TotalNotes=%d): %f", bmsonFile.TotalNotes, total),
-						Message_ja: fmt.Sprintf("実際のTotal値がかなり高いです(トータルノーツ=%d): %f", bmsonFile.TotalNotes, total),
+						Message:    fmt.Sprintf("info.total is very high(TotalNotes=%d): Real:%.2f Defined:%s", bmsonFile.TotalNotes, total, formatFloat(bmsonTotal)),
+						Message_ja: fmt.Sprintf("info.totalがかなり高いです(トータルノーツ=%d): 実際:%.2f 定義:%s", bmsonFile.TotalNotes, total, formatFloat(bmsonTotal)),
 					})
 				} else if totalJudge < 0 {
 					logs = append(logs, Log{
 						Level:      Notice,
-						Message:    fmt.Sprintf("Real total value is very low(TotalNotes=%d): %f", bmsonFile.TotalNotes, total),
-						Message_ja: fmt.Sprintf("実際のTotal値がかなり低いです(トータルノーツ=%d): %f", bmsonFile.TotalNotes, total),
+						Message:    fmt.Sprintf("info.total is very low(TotalNotes=%d): Real:%.2f Defined:%s", bmsonFile.TotalNotes, total, formatFloat(bmsonTotal)),
+						Message_ja: fmt.Sprintf("info.totalがかなり低いです(トータルノーツ=%d): 実際:%.2f 定義:%s", bmsonFile.TotalNotes, total, formatFloat(bmsonTotal)),
 					})
 				}
 			}
