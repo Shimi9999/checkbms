@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -220,7 +221,19 @@ func CheckBmsonFile(bmsonFile *BmsonFile) {
 		bmsonFile.Logs = append(bmsonFile.Logs, logs...)
 	}
 
+	for _, result := range CheckTitleTextsAreDuplicate(bmsonFile) {
+		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
+	}
+
+	if result := CheckNoWavSoundChannels(bmsonFile); result != nil {
+		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
+	}
+
 	if result := CheckTotalnotesIsZero(&bmsonFile.BmsFileBase); result != nil {
+		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
+	}
+
+	if result := CheckSoundNotesIn0thMeasure(bmsonFile); result != nil {
 		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
 	}
 }
@@ -338,4 +351,113 @@ func CheckBmsonInfo(bmsonFile *BmsonFile) (logs Logs) {
 	}
 
 	return logs
+}
+
+type titleTextsAreDuplicate struct {
+	title1, title2         string
+	fieldName1, fieldName2 string
+}
+
+func (t titleTextsAreDuplicate) Log() Log {
+	return Log{
+		Level:      Warning,
+		Message:    fmt.Sprintf("info.%s and info.%s contain the same string: %s, %s", t.fieldName1, t.fieldName2, t.title1, t.title2),
+		Message_ja: fmt.Sprintf("info.%sとinfo.%sが同じ文字列を含んでいます: %s, %s", t.fieldName1, t.fieldName2, t.title1, t.title2),
+	}
+}
+
+func CheckTitleTextsAreDuplicate(bmsonFile *BmsonFile) (tds []titleTextsAreDuplicate) {
+	titles := []string{bmsonFile.Info.Title, bmsonFile.Info.Subtitle, bmsonFile.Info.Chart_name}
+	fieldNames := []string{"title", "subtitle", "chart_name"}
+	for i := 0; i < len(titles); i++ {
+		for j := i + 1; j < len(titles); j++ {
+			if titles[i] != "" && titles[j] != "" && strings.HasSuffix(strings.ToLower(titles[i]), strings.ToLower(titles[j])) {
+				td := titleTextsAreDuplicate{
+					title1:     titles[i],
+					title2:     titles[j],
+					fieldName1: fieldNames[i],
+					fieldName2: fieldNames[j],
+				}
+				tds = append(tds, td)
+			}
+		}
+	}
+	return tds
+}
+
+type noWavSoundChannels struct {
+	noWavSoundChannels []bmson.SoundChannel
+}
+
+func (nw noWavSoundChannels) Log() Log {
+	return Log{
+		Level: Notice,
+		Message: fmt.Sprintf("sound_channels has filenames non-.wav extension(*%d): %s etc...",
+			len(nw.noWavSoundChannels), nw.noWavSoundChannels[0].Name),
+		Message_ja: fmt.Sprintf("sound_channelsに拡張子.wavでないファイル名があります(*%d): %s etc...",
+			len(nw.noWavSoundChannels), nw.noWavSoundChannels[0].Name),
+	}
+}
+
+func CheckNoWavSoundChannels(bmsonFile *BmsonFile) (nw *noWavSoundChannels) {
+	noWavs := []bmson.SoundChannel{}
+	for _, soundChannel := range bmsonFile.Sound_channels {
+		if strings.ToLower(filepath.Ext(soundChannel.Name)) != ".wav" {
+			noWavs = append(noWavs, soundChannel)
+		}
+	}
+	if len(noWavs) > 0 {
+		nw = &noWavSoundChannels{noWavSoundChannels: noWavs}
+	}
+	return nw
+}
+
+type soundNote struct {
+	FileName string
+	Note     bmson.Note
+}
+
+type soundNotesIn0thMeasure struct {
+	soundNotes []soundNote
+}
+
+func (sn soundNotesIn0thMeasure) Log() Log {
+	log := Log{
+		Level:      Warning,
+		Message:    "Note exists in 0th measure",
+		Message_ja: "0小節目にノーツが配置されています",
+		SubLogs:    []string{},
+		SubLogType: List,
+	}
+	for _, soundNote := range sn.soundNotes {
+		log.SubLogs = append(log.SubLogs, fmt.Sprintf("(x:%v, y:%d) %s", soundNote.Note.X, soundNote.Note.Y, soundNote.FileName))
+	}
+	return log
+}
+
+func CheckSoundNotesIn0thMeasure(bmsonFile *BmsonFile) *soundNotesIn0thMeasure {
+	firstBarY := 0
+	for _, line := range bmsonFile.Lines { // ソートが必要？
+		if line.Y > 0 {
+			firstBarY = line.Y
+			break
+		}
+	}
+	detectedSoundNotes := []soundNote{}
+	for _, soundChannel := range bmsonFile.Sound_channels {
+		for _, note := range soundChannel.Notes {
+			if x, ok := note.X.(float64); ok && x > 0 && note.Y < firstBarY {
+				detectedSoundNotes = append(detectedSoundNotes, soundNote{FileName: soundChannel.Name, Note: note})
+			}
+		}
+	}
+	if len(detectedSoundNotes) > 0 {
+		return &soundNotesIn0thMeasure{soundNotes: detectedSoundNotes}
+	}
+	return nil
+}
+
+// 小数点以下の無駄な0を消去して整える
+func formatFloat(f float64) string {
+	return strconv.FormatFloat(f, 'f', -1, 64)
 }
