@@ -225,6 +225,10 @@ func CheckBmsonFile(bmsonFile *BmsonFile) {
 		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
 	}
 
+	for _, result := range CheckSoundChannelNameIsInvalid(bmsonFile) {
+		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
+	}
+
 	if result := CheckNoWavSoundChannels(bmsonFile); result != nil {
 		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
 	}
@@ -234,6 +238,14 @@ func CheckBmsonFile(bmsonFile *BmsonFile) {
 	}
 
 	if result := CheckSoundNotesIn0thMeasure(bmsonFile); result != nil {
+		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
+	}
+
+	for _, result := range CheckPlacedUndefiedBgaIds(bmsonFile) {
+		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
+	}
+
+	if result := CheckDefinedUnplacedBgaHeader(bmsonFile); result != nil {
 		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
 	}
 }
@@ -385,6 +397,28 @@ func CheckTitleTextsAreDuplicate(bmsonFile *BmsonFile) (tds []titleTextsAreDupli
 	return tds
 }
 
+type invalidSoundChannelName struct {
+	name  string
+	index int
+}
+
+func (i invalidSoundChannelName) Log() Log {
+	return Log{
+		Level:      Warning,
+		Message:    fmt.Sprintf("sound_channels[%d].name is invalid value: %s", i.index, i.name),
+		Message_ja: fmt.Sprintf("sound_channels[%d].nameが無効な値です: %s", i.index, i.name),
+	}
+}
+
+func CheckSoundChannelNameIsInvalid(bmsonFile *BmsonFile) (iss []invalidSoundChannelName) {
+	for i, soundChannel := range bmsonFile.Sound_channels {
+		if !hasExts(soundChannel.Name, AUDIO_EXTS) {
+			iss = append(iss, invalidSoundChannelName{name: soundChannel.Name, index: i})
+		}
+	}
+	return iss
+}
+
 type noWavSoundChannels struct {
 	noWavSoundChannels []bmson.SoundChannel
 }
@@ -413,8 +447,8 @@ func CheckNoWavSoundChannels(bmsonFile *BmsonFile) (nw *noWavSoundChannels) {
 }
 
 type soundNote struct {
-	FileName string
-	Note     bmson.Note
+	fileName string
+	note     bmson.Note
 }
 
 type soundNotesIn0thMeasure struct {
@@ -430,7 +464,7 @@ func (sn soundNotesIn0thMeasure) Log() Log {
 		SubLogType: List,
 	}
 	for _, soundNote := range sn.soundNotes {
-		log.SubLogs = append(log.SubLogs, fmt.Sprintf("(x:%v, y:%d) %s", soundNote.Note.X, soundNote.Note.Y, soundNote.FileName))
+		log.SubLogs = append(log.SubLogs, fmt.Sprintf("(x:%v, y:%d) %s", soundNote.note.X, soundNote.note.Y, soundNote.fileName))
 	}
 	return log
 }
@@ -447,7 +481,7 @@ func CheckSoundNotesIn0thMeasure(bmsonFile *BmsonFile) *soundNotesIn0thMeasure {
 	for _, soundChannel := range bmsonFile.Sound_channels {
 		for _, note := range soundChannel.Notes {
 			if x, ok := note.X.(float64); ok && x > 0 && note.Y < firstBarY {
-				detectedSoundNotes = append(detectedSoundNotes, soundNote{FileName: soundChannel.Name, Note: note})
+				detectedSoundNotes = append(detectedSoundNotes, soundNote{fileName: soundChannel.Name, note: note})
 			}
 		}
 	}
@@ -455,6 +489,101 @@ func CheckSoundNotesIn0thMeasure(bmsonFile *BmsonFile) *soundNotesIn0thMeasure {
 		return &soundNotesIn0thMeasure{soundNotes: detectedSoundNotes}
 	}
 	return nil
+}
+
+type placedUndefinedBgaIds struct {
+	eventName string
+	ids       []int
+}
+
+func (b placedUndefinedBgaIds) Log() Log {
+	log := Log{
+		Level:      Warning,
+		Message:    fmt.Sprintf("Placed %s.id is undefined", b.eventName),
+		Message_ja: fmt.Sprintf("配置されている%s.idが未定義です", b.eventName),
+		SubLogs:    []string{},
+		SubLogType: List,
+	}
+	for _, id := range b.ids {
+		log.SubLogs = append(log.SubLogs, fmt.Sprintf("%d", id))
+	}
+	return log
+}
+
+func CheckPlacedUndefiedBgaIds(bmsonFile *BmsonFile) (pus []placedUndefinedBgaIds) {
+	if bmsonFile.Bga == nil {
+		return nil
+	}
+
+	bgaEventss := [][]bmson.BGAEvent{bmsonFile.Bga.Bga_events, bmsonFile.Bga.Layer_events, bmsonFile.Bga.Poor_events}
+	bgaEventsNames := []string{"bga_events", "layer_events", "poor_events"}
+	for i, bgaEvents := range bgaEventss {
+		undefinedBgaIds := []int{}
+		for _, bgaEvent := range bgaEvents {
+			defined := false
+			for _, header := range bmsonFile.Bga.Bga_header {
+				if bgaEvent.Id == header.Id {
+					defined = true
+					break
+				}
+			}
+			if !defined {
+				undefinedBgaIds = append(undefinedBgaIds, bgaEvent.Id)
+			}
+		}
+		if len(undefinedBgaIds) > 0 {
+			pus = append(pus, placedUndefinedBgaIds{eventName: bgaEventsNames[i], ids: undefinedBgaIds})
+		}
+	}
+	return pus
+}
+
+type definedUnplacedBgaHeader struct {
+	headers []bmson.BGAHeader
+}
+
+func (b definedUnplacedBgaHeader) Log() Log {
+	log := Log{
+		Level:      Warning,
+		Message:    "Defined bga_header is not placed",
+		Message_ja: "定義されているbga_headerが未配置です",
+		SubLogs:    []string{},
+		SubLogType: List,
+	}
+	for _, header := range b.headers {
+		log.SubLogs = append(log.SubLogs, fmt.Sprintf("id:%d, name:%s", header.Id, header.Name))
+	}
+	return log
+}
+
+func CheckDefinedUnplacedBgaHeader(bmsonFile *BmsonFile) (du *definedUnplacedBgaHeader) {
+	if bmsonFile.Bga == nil {
+		return nil
+	}
+
+	unplacedBgaHeaders := []bmson.BGAHeader{}
+	bgaEventss := [][]bmson.BGAEvent{bmsonFile.Bga.Bga_events, bmsonFile.Bga.Layer_events, bmsonFile.Bga.Poor_events}
+	for _, header := range bmsonFile.Bga.Bga_header {
+		placed := false
+		for _, bgaEvents := range bgaEventss {
+			for _, bgaEvent := range bgaEvents {
+				if header.Id == bgaEvent.Id {
+					placed = true
+					break
+				}
+			}
+			if placed {
+				break
+			}
+		}
+		if !placed {
+			unplacedBgaHeaders = append(unplacedBgaHeaders, header)
+		}
+	}
+	if len(unplacedBgaHeaders) > 0 {
+		du = &definedUnplacedBgaHeader{headers: unplacedBgaHeaders}
+	}
+	return du
 }
 
 // 小数点以下の無駄な0を消去して整える
