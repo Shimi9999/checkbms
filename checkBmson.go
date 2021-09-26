@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -246,6 +247,10 @@ func CheckBmsonFile(bmsonFile *BmsonFile) {
 	}
 
 	if result := CheckDefinedUnplacedBgaHeader(bmsonFile); result != nil {
+		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
+	}
+
+	for _, result := range CheckDuplicateY(bmsonFile) {
 		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
 	}
 }
@@ -584,6 +589,127 @@ func CheckDefinedUnplacedBgaHeader(bmsonFile *BmsonFile) (du *definedUnplacedBga
 		du = &definedUnplacedBgaHeader{headers: unplacedBgaHeaders}
 	}
 	return du
+}
+
+type yObject struct {
+	y     int
+	index int
+	value interface{}
+}
+
+type yDuplicate struct {
+	yValue    int
+	fieldName string
+	yObjects  []yObject
+}
+
+func (d yDuplicate) Log() Log {
+	log := Log{
+		Level:      Warning,
+		Message:    fmt.Sprintf("%s has duplicate y values: %d * %d", d.fieldName, d.yValue, len(d.yObjects)),
+		Message_ja: fmt.Sprintf("%sでy値が重複しています: %d * %d", d.fieldName, d.yValue, len(d.yObjects)),
+		SubLogs:    []string{},
+		SubLogType: Detail,
+	}
+	for _, obj := range d.yObjects {
+		val := strings.ToLower(fmt.Sprintf("%+v", obj.value)) // フィールド名を小文字にする
+		log.SubLogs = append(log.SubLogs, fmt.Sprintf("%s[%d] %+v", d.fieldName, obj.index, val))
+	}
+	return log
+}
+
+func CheckDuplicateY(bmsonFile *BmsonFile) (yds []yDuplicate) {
+	checkDuplicateY := func(yObjects []yObject, fieldName string) {
+		if len(yObjects) <= 1 {
+			return
+		}
+		sort.SliceStable(yObjects, func(i, j int) bool { return yObjects[i].y < yObjects[j].y })
+		sameYObjects := []yObject{yObjects[0]}
+		for i := 1; i < len(yObjects); i++ {
+			if yObjects[i-1].y == yObjects[i].y {
+				sameYObjects = append(sameYObjects, yObjects[i])
+			} else {
+				if len(sameYObjects) >= 2 {
+					tmpSlice := append([]yObject{}, sameYObjects...)
+					yds = append(yds, yDuplicate{yValue: yObjects[i-1].y, fieldName: fieldName, yObjects: tmpSlice})
+				}
+				sameYObjects = []yObject{yObjects[i]}
+			}
+		}
+		if len(sameYObjects) >= 2 {
+			tmpSlice := append([]yObject{}, sameYObjects...)
+			yds = append(yds, yDuplicate{yValue: yObjects[len(yObjects)-1].y, fieldName: fieldName, yObjects: tmpSlice})
+		}
+	}
+
+	func() {
+		yObjects := []yObject{}
+		for i, line := range bmsonFile.Lines {
+			yObjects = append(yObjects, yObject{y: line.Y, index: i, value: line})
+		}
+		checkDuplicateY(yObjects, "lines")
+	}()
+
+	for si, soundChannel := range bmsonFile.Sound_channels {
+		yObjects := []yObject{}
+		for i, note := range soundChannel.Notes {
+			yObjects = append(yObjects, yObject{y: note.Y, index: i, value: note})
+		}
+		fieldName := fmt.Sprintf("sound_channels[%d](%s)", si, soundChannel.Name)
+		checkDuplicateY(yObjects, fieldName)
+	}
+
+	func() {
+		yObjects := []yObject{}
+		for i, event := range bmsonFile.Bpm_events {
+			yObjects = append(yObjects, yObject{y: event.Y, index: i, value: event})
+		}
+		checkDuplicateY(yObjects, "bpm_events")
+	}()
+
+	func() {
+		yObjects := []yObject{}
+		for i, event := range bmsonFile.Stop_events {
+			yObjects = append(yObjects, yObject{y: event.Y, index: i, value: event})
+		}
+		checkDuplicateY(yObjects, "stop_events")
+	}()
+
+	func() {
+		yObjects := []yObject{}
+		for i, event := range bmsonFile.Scroll_events {
+			yObjects = append(yObjects, yObject{y: event.Y, index: i, value: event})
+		}
+		checkDuplicateY(yObjects, "scroll_events")
+	}()
+
+	if bmsonFile.Bga != nil {
+		func() {
+			yObjects := []yObject{}
+			for i, event := range bmsonFile.Bga.Bga_events {
+				yObjects = append(yObjects, yObject{y: event.Y, index: i, value: event})
+			}
+			checkDuplicateY(yObjects, "bga_events")
+		}()
+
+		func() {
+			yObjects := []yObject{}
+			for i, event := range bmsonFile.Bga.Layer_events {
+				yObjects = append(yObjects, yObject{y: event.Y, index: i, value: event})
+			}
+			checkDuplicateY(yObjects, "layer_events")
+		}()
+
+		func() {
+			yObjects := []yObject{}
+			for i, event := range bmsonFile.Bga.Poor_events {
+				yObjects = append(yObjects, yObject{y: event.Y, index: i, value: event})
+			}
+			checkDuplicateY(yObjects, "poor_events")
+		}()
+	}
+
+	return yds
 }
 
 // 小数点以下の無駄な0を消去して整える
