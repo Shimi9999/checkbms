@@ -844,7 +844,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 			pathsOfdoNotExistWavs = append(pathsOfdoNotExistWavs, result.filePath)
 		}
 
-		for _, result := range CheckDefinedBpmFilesExist(bmsDir, &bmsDir.BmsFiles[i]) {
+		for _, result := range CheckDefinedBmpFilesExist(bmsDir, &bmsDir.BmsFiles[i]) {
 			bmsDir.Logs = append(bmsDir.Logs, result.Log())
 		}
 

@@ -115,7 +115,7 @@ func CheckDefinedWavFilesExist(bmsDir *Directory, bmsFile *BmsFile) (nfs []notEx
 	return nfs
 }
 
-func CheckDefinedBpmFilesExist(bmsDir *Directory, bmsFile *BmsFile) (nfs []notExistFile) {
+func CheckDefinedBmpFilesExist(bmsDir *Directory, bmsFile *BmsFile) (nfs []notExistFile) {
 	for _, def := range bmsFile.HeaderBmp {
 		if def.Value != "" {
 			exts := IMAGE_EXTS
