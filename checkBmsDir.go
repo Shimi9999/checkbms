@@ -357,13 +357,18 @@ func (sb sameHashBmsFiles) Log() Log {
 }
 
 func CheckSameHashBmsFiles(bmsDir *Directory) (sbs []sameHashBmsFiles) {
-	tmpBmsFiles := []BmsFile{}
-	copy(tmpBmsFiles, bmsDir.BmsFiles)
+	tmpBmsFiles := []BmsFileBase{}
+	for _, bmsFile := range bmsDir.BmsFiles {
+		tmpBmsFiles = append(tmpBmsFiles, bmsFile.BmsFileBase)
+	}
+	for _, bmsonFile := range bmsDir.BmsonFiles {
+		tmpBmsFiles = append(tmpBmsFiles, bmsonFile.BmsFileBase)
+	}
 	for i := 0; i < len(tmpBmsFiles); i++ {
-		samePaths := []string{bmsDir.BmsFiles[i].Path}
+		samePaths := []string{tmpBmsFiles[i].Path}
 		for j := i + 1; j < len(tmpBmsFiles); j++ {
-			if bmsDir.BmsFiles[i].Sha256 == bmsDir.BmsFiles[j].Sha256 {
-				samePaths = append(samePaths, bmsDir.BmsFiles[j].Path)
+			if tmpBmsFiles[i].Sha256 == tmpBmsFiles[j].Sha256 {
+				samePaths = append(samePaths, tmpBmsFiles[j].Path)
 				if j+1 < len(tmpBmsFiles) { // 同ハッシュの組み合わせが重複しないように、一度該当した要素は削除する
 					tmpBmsFiles = append(tmpBmsFiles[:j], tmpBmsFiles[j+1:]...)
 				}
