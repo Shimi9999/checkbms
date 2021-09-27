@@ -23,7 +23,7 @@ func (bmsonFile *BmsonFile) ScanBmsonFile() error {
 	bmsonFile.Logs = logs
 	if err != nil {
 		bmsonFile.IsInvalid = true
-		return err
+		return nil
 	}
 	bmsonFile.Bmson = *bmsonData
 
@@ -218,6 +218,10 @@ func ScanBmson(bytes []byte) (bmsonData *bmson.Bmson, logs Logs, _ error) {
 }
 
 func CheckBmsonFile(bmsonFile *BmsonFile) {
+	if bmsonFile.IsInvalid {
+		return
+	}
+
 	if logs := CheckBmsonInfo(bmsonFile); len(logs) > 0 {
 		bmsonFile.Logs = append(bmsonFile.Logs, logs...)
 	}

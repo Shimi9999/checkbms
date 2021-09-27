@@ -871,6 +871,10 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 	}
 
 	for i := range bmsDir.BmsonFiles {
+		if bmsDir.BmsonFiles[i].IsInvalid {
+			continue
+		}
+
 		CheckBmsonFile(&bmsDir.BmsonFiles[i])
 
 		for _, result := range CheckDefinedInfoFilesExistBmson(bmsDir, &bmsDir.BmsonFiles[i]) {
