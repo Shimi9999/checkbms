@@ -873,8 +873,38 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 	for i := range bmsDir.BmsonFiles {
 		CheckBmsonFile(&bmsDir.BmsonFiles[i])
 
-		for _, result := range CheckDefinedFilesExistBmson(bmsDir, &bmsDir.BmsonFiles[i]) {
+		for _, result := range CheckDefinedInfoFilesExistBmson(bmsDir, &bmsDir.BmsonFiles[i]) {
 			bmsDir.Logs = append(bmsDir.Logs, result.Log())
+		}
+
+		pathsOfdoNotExistWavs := []string{}
+		for _, result := range CheckDefinedSoundFilesExistBmson(bmsDir, &bmsDir.BmsonFiles[i]) {
+			bmsDir.Logs = append(bmsDir.Logs, result.Log())
+			pathsOfdoNotExistWavs = append(pathsOfdoNotExistWavs, result.filePath)
+		}
+
+		for _, result := range CheckDefinedBgaFilesExistBmson(bmsDir, &bmsDir.BmsonFiles[i]) {
+			bmsDir.Logs = append(bmsDir.Logs, result.Log())
+		}
+
+		if len(pathsOfdoNotExistWavs) > 0 {
+			wavFileIsExist := func(path string) bool {
+				for _, pathOfdoNotExistWav := range pathsOfdoNotExistWavs {
+					if path == pathOfdoNotExistWav {
+						return false
+					}
+				}
+				return true
+			}
+			func() {
+				result1, result2 := CheckWithoutKeysoundBmson(&bmsDir.BmsonFiles[i], wavFileIsExist)
+				if result1 != nil {
+					bmsDir.BmsonFiles[i].Logs = append(bmsDir.BmsonFiles[i].Logs, result1.Log())
+				}
+				if result2 != nil {
+					bmsDir.BmsonFiles[i].Logs = append(bmsDir.BmsonFiles[i].Logs, result2.Log())
+				}
+			}()
 		}
 	}
 

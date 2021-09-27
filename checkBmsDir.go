@@ -138,50 +138,62 @@ func (nf notExistFileBmson) Log() Log {
 	return notExistFileLog(nf.notExistFile, true)
 }
 
-func CheckDefinedFilesExistBmson(bmsDir *Directory, bmsonFile *BmsonFile) (nfs []notExistFileBmson) {
-	type defiedPath struct {
-		path       string
-		fieldName  string
-		exts       []string
-		alertLevel AlertLevel
-	}
+type definedPath struct {
+	path       string
+	fieldName  string
+	exts       []string
+	alertLevel AlertLevel
+}
 
-	defiedPaths := []defiedPath{
+func checkDefinedPathsExistBmson(bmsDir *Directory, bmsonFile *BmsonFile, definedPaths []definedPath) (nfs []notExistFileBmson) {
+	for _, defiedPath := range definedPaths {
+		if defiedPath.path != "" && !containsInNonBmsFiles(bmsDir, defiedPath.path, defiedPath.exts, true) {
+			nfs = append(nfs, notExistFileBmson{notExistFile: notExistFile{
+				level: defiedPath.alertLevel, dirPath: bmsDir.Path, bmsPath: bmsonFile.Path, filePath: defiedPath.path, command: defiedPath.fieldName}})
+		}
+	}
+	return nfs
+}
+
+func CheckDefinedInfoFilesExistBmson(bmsDir *Directory, bmsonFile *BmsonFile) (nfs []notExistFileBmson) {
+	defiedPaths := []definedPath{
 		{path: bmsonFile.Info.Back_image, fieldName: "info.back_image", exts: nil, alertLevel: Warning},
 		{path: bmsonFile.Info.Eyecatch_image, fieldName: "info.eyecatch_image", exts: nil, alertLevel: Warning},
 		{path: bmsonFile.Info.Title_image, fieldName: "info.title_image", exts: nil, alertLevel: Warning},
 		{path: bmsonFile.Info.Banner_image, fieldName: "info.banner_image", exts: nil, alertLevel: Warning},
 		{path: bmsonFile.Info.Preview_music, fieldName: "info.preview_music", exts: AUDIO_EXTS, alertLevel: Warning},
 	}
+	return checkDefinedPathsExistBmson(bmsDir, bmsonFile, defiedPaths)
+}
+
+func CheckDefinedSoundFilesExistBmson(bmsDir *Directory, bmsonFile *BmsonFile) (nfs []notExistFileBmson) {
+	defiedPaths := []definedPath{}
 	for i, soundChannel := range bmsonFile.Sound_channels {
-		defiedPaths = append(defiedPaths, defiedPath{
+		defiedPaths = append(defiedPaths, definedPath{
 			path:       soundChannel.Name,
 			fieldName:  fmt.Sprintf("sound_channel[%d]", i),
 			exts:       AUDIO_EXTS,
 			alertLevel: Error})
 	}
+	return checkDefinedPathsExistBmson(bmsDir, bmsonFile, defiedPaths)
+}
+
+func CheckDefinedBgaFilesExistBmson(bmsDir *Directory, bmsonFile *BmsonFile) (nfs []notExistFileBmson) {
+	defiedPaths := []definedPath{}
 	if bmsonFile.Bga != nil {
 		for i, header := range bmsonFile.Bga.Bga_header {
 			exts := IMAGE_EXTS
 			if hasExts(header.Name, MOVIE_EXTS) {
 				exts = append(MOVIE_EXTS, IMAGE_EXTS...)
 			}
-			defiedPaths = append(defiedPaths, defiedPath{
+			defiedPaths = append(defiedPaths, definedPath{
 				path:       header.Name,
 				fieldName:  fmt.Sprintf("bga_header[%d](id:%d)", i, header.Id),
 				exts:       exts,
 				alertLevel: Error})
 		}
 	}
-
-	for _, defiedPath := range defiedPaths {
-		if defiedPath.path != "" && !containsInNonBmsFiles(bmsDir, defiedPath.path, defiedPath.exts, true) {
-			nfs = append(nfs, notExistFileBmson{notExistFile: notExistFile{
-				level: defiedPath.alertLevel, dirPath: bmsDir.Path, bmsPath: bmsonFile.Path, filePath: defiedPath.path, command: defiedPath.fieldName}})
-		}
-	}
-
-	return nfs
+	return checkDefinedPathsExistBmson(bmsDir, bmsonFile, defiedPaths)
 }
 
 type notUnifiedDefinition struct {

@@ -811,6 +811,7 @@ func (wn withoutKeysoundNotesBmson) Log() Log {
 
 func CheckWithoutKeysoundBmson(bmsonFile *BmsonFile, wavFileIsExist func(string) bool) (wm *withoutKeysoundMomentsBmson, wn *withoutKeysoundNotesBmson) {
 	iss := CheckSoundChannelNameIsInvalid(bmsonFile)
+	nonexistentWavIsPlaced := false
 	isNoWavName := func(name string) bool {
 		for _, invalidName := range iss {
 			if name == invalidName.name {
@@ -818,6 +819,7 @@ func CheckWithoutKeysoundBmson(bmsonFile *BmsonFile, wavFileIsExist func(string)
 			}
 		}
 		if wavFileIsExist != nil && !wavFileIsExist(name) {
+			nonexistentWavIsPlaced = true
 			return true
 		}
 		return false
@@ -855,6 +857,10 @@ func CheckWithoutKeysoundBmson(bmsonFile *BmsonFile, wavFileIsExist func(string)
 		} else {
 			momentIsNoWav = false
 		}
+	}
+
+	if wavFileIsExist != nil && !nonexistentWavIsPlaced {
+		return nil, nil
 	}
 
 	if len(noWavMoments) > 0 {
