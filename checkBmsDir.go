@@ -25,18 +25,26 @@ func relativePathFromBmsRoot(dirPath, path string) string {
 }
 
 // pathのファイルがbmsDir.NonBmsFilesに含まれているかを返す。ついでにNonBmsFileのUsedをonにする。
-func containsInNonBmsFiles(bmsDir *Directory, path string, exts []string) bool {
+func containsInNonBmsFiles(bmsDir *Directory, path string, exts []string, isBmson bool) bool {
 	contains := false // 拡張子補完の対称ファイルを全てUsedにする
 	definedFilePath := filepath.Clean(strings.ToLower(path))
 	for i := range bmsDir.NonBmsFiles {
 		//realFilePath := relativePathFromBmsRoot(bmsDir.Path, relativeToLower(bmsDir.Path, bmsDir.NonBmsFiles[i].Path))
 		realFilePath := strings.ToLower(relativePathFromBmsRoot(bmsDir.Path, bmsDir.NonBmsFiles[i].Path))
 		if definedFilePath == realFilePath {
-			bmsDir.NonBmsFiles[i].Used = true
+			if isBmson {
+				bmsDir.NonBmsFiles[i].Used_bmson = true
+			} else {
+				bmsDir.NonBmsFiles[i].Used_bms = true
+			}
 			contains = true
 		} else if exts != nil && hasExts(realFilePath, exts) &&
 			withoutExtPath(definedFilePath) == withoutExtPath(realFilePath) {
-			bmsDir.NonBmsFiles[i].Used = true
+			if isBmson {
+				bmsDir.NonBmsFiles[i].Used_bmson = true
+			} else {
+				bmsDir.NonBmsFiles[i].Used_bms = true
+			}
 			contains = true
 		}
 	}
@@ -60,12 +68,20 @@ type notExistFile struct {
 	command  string
 }
 
-func (nf notExistFile) Log() Log {
+func notExistFileLog(nf notExistFile, isBmson bool) Log {
+	label := "#" + strings.ToUpper(nf.command)
+	if isBmson {
+		label = nf.command
+	}
 	return Log{
 		Level:      nf.level,
-		Message:    fmt.Sprintf("Defined file does not exist(%s): #%s %s", relativePathFromBmsRoot(nf.dirPath, nf.bmsPath), strings.ToUpper(nf.command), nf.filePath),
-		Message_ja: fmt.Sprintf("定義されているファイルが実在しません(%s): #%s %s", relativePathFromBmsRoot(nf.dirPath, nf.bmsPath), strings.ToUpper(nf.command), nf.filePath),
+		Message:    fmt.Sprintf("Defined file does not exist(%s): %s %s", relativePathFromBmsRoot(nf.dirPath, nf.bmsPath), label, nf.filePath),
+		Message_ja: fmt.Sprintf("定義されているファイルが実在しません(%s): %s %s", relativePathFromBmsRoot(nf.dirPath, nf.bmsPath), label, nf.filePath),
 	}
+}
+
+func (nf notExistFile) Log() Log {
+	return notExistFileLog(nf, false)
 }
 
 func CheckDefinedFilesExist(bmsDir *Directory, bmsFile *BmsFile) (nfs []notExistFile) {
@@ -73,7 +89,7 @@ func CheckDefinedFilesExist(bmsDir *Directory, bmsFile *BmsFile) (nfs []notExist
 		for _, command := range commands {
 			val, ok := bmsFile.Header[command]
 			if ok && val != "" {
-				if !containsInNonBmsFiles(bmsDir, val, exts) {
+				if !containsInNonBmsFiles(bmsDir, val, exts, false) {
 					nfs = append(nfs, notExistFile{level: Warning, dirPath: bmsDir.Path, bmsPath: bmsFile.Path, filePath: val, command: command})
 				}
 			}
@@ -91,7 +107,7 @@ func CheckDefinedFilesExist(bmsDir *Directory, bmsFile *BmsFile) (nfs []notExist
 func CheckDefinedWavFilesExist(bmsDir *Directory, bmsFile *BmsFile) (nfs []notExistFile) {
 	for _, def := range bmsFile.HeaderWav {
 		if def.Value != "" {
-			if !containsInNonBmsFiles(bmsDir, def.Value, AUDIO_EXTS) {
+			if !containsInNonBmsFiles(bmsDir, def.Value, AUDIO_EXTS, false) {
 				nfs = append(nfs, notExistFile{level: Error, dirPath: bmsDir.Path, bmsPath: bmsFile.Path, filePath: def.Value, command: def.command()})
 			}
 		}
@@ -106,11 +122,65 @@ func CheckDefinedBpmFilesExist(bmsDir *Directory, bmsFile *BmsFile) (nfs []notEx
 			if hasExts(def.Value, MOVIE_EXTS) {
 				exts = append(MOVIE_EXTS, IMAGE_EXTS...)
 			}
-			if !containsInNonBmsFiles(bmsDir, def.Value, exts) {
+			if !containsInNonBmsFiles(bmsDir, def.Value, exts, false) {
 				nfs = append(nfs, notExistFile{level: Error, dirPath: bmsDir.Path, bmsPath: bmsFile.Path, filePath: def.Value, command: def.command()})
 			}
 		}
 	}
+	return nfs
+}
+
+type notExistFileBmson struct {
+	notExistFile
+}
+
+func (nf notExistFileBmson) Log() Log {
+	return notExistFileLog(nf.notExistFile, true)
+}
+
+func CheckDefinedFilesExistBmson(bmsDir *Directory, bmsonFile *BmsonFile) (nfs []notExistFileBmson) {
+	type defiedPath struct {
+		path       string
+		fieldName  string
+		exts       []string
+		alertLevel AlertLevel
+	}
+
+	defiedPaths := []defiedPath{
+		{path: bmsonFile.Info.Back_image, fieldName: "info.back_image", exts: nil, alertLevel: Warning},
+		{path: bmsonFile.Info.Eyecatch_image, fieldName: "info.eyecatch_image", exts: nil, alertLevel: Warning},
+		{path: bmsonFile.Info.Title_image, fieldName: "info.title_image", exts: nil, alertLevel: Warning},
+		{path: bmsonFile.Info.Banner_image, fieldName: "info.banner_image", exts: nil, alertLevel: Warning},
+		{path: bmsonFile.Info.Preview_music, fieldName: "info.preview_music", exts: AUDIO_EXTS, alertLevel: Warning},
+	}
+	for i, soundChannel := range bmsonFile.Sound_channels {
+		defiedPaths = append(defiedPaths, defiedPath{
+			path:       soundChannel.Name,
+			fieldName:  fmt.Sprintf("sound_channel[%d]", i),
+			exts:       AUDIO_EXTS,
+			alertLevel: Error})
+	}
+	if bmsonFile.Bga != nil {
+		for i, header := range bmsonFile.Bga.Bga_header {
+			exts := IMAGE_EXTS
+			if hasExts(header.Name, MOVIE_EXTS) {
+				exts = append(MOVIE_EXTS, IMAGE_EXTS...)
+			}
+			defiedPaths = append(defiedPaths, defiedPath{
+				path:       header.Name,
+				fieldName:  fmt.Sprintf("bga_header[%d](id:%d)", i, header.Id),
+				exts:       exts,
+				alertLevel: Error})
+		}
+	}
+
+	for _, defiedPath := range defiedPaths {
+		if defiedPath.path != "" && !containsInNonBmsFiles(bmsDir, defiedPath.path, defiedPath.exts, true) {
+			nfs = append(nfs, notExistFileBmson{notExistFile: notExistFile{
+				level: defiedPath.alertLevel, dirPath: bmsDir.Path, bmsPath: bmsonFile.Path, filePath: defiedPath.path, command: defiedPath.fieldName}})
+		}
+	}
+
 	return nfs
 }
 
@@ -177,7 +247,7 @@ func (uf unusedFile) Log() Log {
 func CheckUnusedFile(bmsDir *Directory) (ufs []unusedFile) {
 	ignoreExts := []string{".txt", ".zip", ".rar", ".lzh", ".7z"}
 	for _, nonBmsFile := range bmsDir.NonBmsFiles {
-		if !nonBmsFile.Used && !hasExts(nonBmsFile.Path, ignoreExts) && !isPreview(bmsDir.Path, nonBmsFile.Path) {
+		if !nonBmsFile.UsedFromAny() && !hasExts(nonBmsFile.Path, ignoreExts) && !isPreview(bmsDir.Path, nonBmsFile.Path) {
 			ufs = append(ufs, unusedFile{path: relativePathFromBmsRoot(bmsDir.Path, nonBmsFile.Path)})
 		}
 	}
@@ -225,7 +295,7 @@ func CheckEnvironmentDependentFilename(bmsDir *Directory) (efs []environmentDepe
 		}
 	}
 	for _, file := range bmsDir.NonBmsFiles {
-		if rPath := relativePathFromBmsRoot(bmsDir.Path, file.Path); (file.Used || strings.ToLower(filepath.Ext(file.Path)) == ".txt" || isPreview(bmsDir.Path, file.Path)) && containsMultibyteRune(rPath) {
+		if rPath := relativePathFromBmsRoot(bmsDir.Path, file.Path); (file.UsedFromAny() || strings.ToLower(filepath.Ext(file.Path)) == ".txt" || isPreview(bmsDir.Path, file.Path)) && containsMultibyteRune(rPath) {
 			efs = append(efs, environmentDependentFilename{path: rPath})
 		}
 	}
@@ -249,7 +319,7 @@ func (oa over1MinuteAudioFile) Log() Log {
 // TODO 引数としてUsedリストを受け取る？
 func CheckOver1MinuteAudioFile(bmsDir *Directory) (oas []over1MinuteAudioFile) {
 	for _, file := range bmsDir.NonBmsFiles {
-		if file.Used && hasExts(file.Path, AUDIO_EXTS) {
+		if file.Used_bms && hasExts(file.Path, AUDIO_EXTS) {
 			if d, _ := audio.Duration(file.Path); d >= 60.0 {
 				oas = append(oas, over1MinuteAudioFile{duration: d, path: relativePathFromBmsRoot(bmsDir.Path, file.Path)})
 			}

@@ -286,13 +286,18 @@ func CalculateDefaultTotal(totalNotes, keymode int) float64 {
 
 type NonBmsFile struct {
 	File
-	Used bool
+	Used_bms   bool
+	Used_bmson bool
 }
 
 func newNonBmsFile(path string) *NonBmsFile {
 	var nbf NonBmsFile
 	nbf.Path = path
 	return &nbf
+}
+
+func (f NonBmsFile) UsedFromAny() bool {
+	return f.Used_bms || f.Used_bmson
 }
 
 type fraction struct {
@@ -867,6 +872,10 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 
 	for i := range bmsDir.BmsonFiles {
 		CheckBmsonFile(&bmsDir.BmsonFiles[i])
+
+		for _, result := range CheckDefinedFilesExistBmson(bmsDir, &bmsDir.BmsonFiles[i]) {
+			bmsDir.Logs = append(bmsDir.Logs, result.Log())
+		}
 	}
 
 	for _, result := range CheckDefinitionsAreUnified(bmsDir) {
