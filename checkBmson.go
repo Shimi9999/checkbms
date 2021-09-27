@@ -765,8 +765,12 @@ func CheckNoteInLNBmson(bmsonFile *BmsonFile) (nls []noteInLNBmson) {
 		var onGoingLN *soundNote
 		for i := range laneNotes {
 			if onGoingLN != nil {
-				if laneNotes[i].note.Y >= onGoingLN.note.Y && laneNotes[i].note.Y <= onGoingLN.note.Y+onGoingLN.note.L {
-					nls = append(nls, noteInLNBmson{containedNote: &laneNotes[i], ln: onGoingLN})
+				// LN開始地点はレイヤーノーツを考慮して範囲から外す。
+				if laneNotes[i].note.Y > onGoingLN.note.Y && laneNotes[i].note.Y <= onGoingLN.note.Y+onGoingLN.note.L {
+					// LN終了地点は終端音(up=true)を除外する
+					if !(laneNotes[i].note.Y == onGoingLN.note.Y+onGoingLN.note.L && laneNotes[i].note.Up) {
+						nls = append(nls, noteInLNBmson{containedNote: &laneNotes[i], ln: onGoingLN})
+					}
 				} else if onGoingLN.note.Y+onGoingLN.note.L < laneNotes[i].note.Y {
 					onGoingLN = nil
 				}
