@@ -253,6 +253,20 @@ func CheckBmsonFile(bmsonFile *BmsonFile) {
 	for _, result := range CheckDuplicateY(bmsonFile) {
 		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
 	}
+
+	for _, result := range CheckNoteInLNBmson(bmsonFile) {
+		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
+	}
+
+	func() {
+		result1, result2 := CheckWithoutKeysoundBmson(bmsonFile, nil)
+		if result1 != nil {
+			bmsonFile.Logs = append(bmsonFile.Logs, result1.Log())
+		}
+		if result2 != nil {
+			bmsonFile.Logs = append(bmsonFile.Logs, result2.Log())
+		}
+	}()
 }
 
 var infoFields = []Command{
@@ -469,7 +483,7 @@ func (sn soundNotesIn0thMeasure) Log() Log {
 		SubLogType: List,
 	}
 	for _, soundNote := range sn.soundNotes {
-		log.SubLogs = append(log.SubLogs, fmt.Sprintf("(x:%v, y:%d) %s", soundNote.note.X, soundNote.note.Y, soundNote.fileName))
+		log.SubLogs = append(log.SubLogs, fmt.Sprintf("%s(x:%v, y:%d)", soundNote.fileName, soundNote.note.X, soundNote.note.Y))
 	}
 	return log
 }
@@ -710,6 +724,144 @@ func CheckDuplicateY(bmsonFile *BmsonFile) (yds []yDuplicate) {
 	}
 
 	return yds
+}
+
+type noteInLNBmson struct {
+	containedNote *soundNote
+	ln            *soundNote
+}
+
+func (n noteInLNBmson) Log() Log {
+	noteType := "Normal"
+	noteType_ja := "通常"
+	if n.containedNote.note.L > 0 {
+		noteType = "Long"
+		noteType_ja = "ロング"
+	}
+	noteStr := func(soundNote *soundNote) string {
+		return fmt.Sprintf("%s(x:%v, y:%d)", soundNote.fileName, soundNote.note.X, soundNote.note.Y)
+	}
+	return Log{
+		Level:      Error,
+		Message:    fmt.Sprintf("%s note is in LN: %s in %s", noteType, noteStr(n.ln), noteStr(n.containedNote)),
+		Message_ja: fmt.Sprintf("%sノーツがLNの中に配置されています: %s in %s", noteType_ja, noteStr(n.ln), noteStr(n.containedNote)),
+	}
+}
+
+func CheckNoteInLNBmson(bmsonFile *BmsonFile) (nls []noteInLNBmson) {
+	laneNum := bmsonFile.Keymode + 2
+	soundNotes := make([][]soundNote, laneNum)
+	for _, soundChannel := range bmsonFile.Sound_channels {
+		for _, note := range soundChannel.Notes {
+			if x, ok := note.X.(float64); ok && x-math.Floor(x) == 0 && x > 0 && int(x) <= laneNum {
+				xInt := int(x)
+				soundNotes[xInt] = append(soundNotes[xInt], soundNote{fileName: soundChannel.Name, note: note})
+			}
+		}
+	}
+
+	for _, laneNotes := range soundNotes {
+		sort.SliceStable(laneNotes, func(i, j int) bool { return laneNotes[i].note.Y < laneNotes[j].note.Y })
+		var onGoingLN *soundNote
+		for i := range laneNotes {
+			if onGoingLN != nil {
+				if laneNotes[i].note.Y >= onGoingLN.note.Y && laneNotes[i].note.Y <= onGoingLN.note.Y+onGoingLN.note.L {
+					nls = append(nls, noteInLNBmson{containedNote: &laneNotes[i], ln: onGoingLN})
+				} else if onGoingLN.note.Y+onGoingLN.note.L < laneNotes[i].note.Y {
+					onGoingLN = nil
+				}
+			}
+			if laneNotes[i].note.L > 0 {
+				onGoingLN = &laneNotes[i]
+			}
+		}
+	}
+	return nls
+}
+
+type withoutKeysoundMomentsBmson struct {
+	withoutKeysoundMoments
+}
+
+type withoutKeysoundNotesBmson struct {
+	wavFileIsExist  bool
+	noWavNotes      []soundNote
+	totalNotesCount int
+}
+
+func (wn withoutKeysoundNotesBmson) Log() Log {
+	audioText := ""
+	audioText_ja := ""
+	if wn.wavFileIsExist {
+		audioText = " (or audio file)"
+		audioText_ja = "(または音声ファイル)"
+	}
+	notesText := fmt.Sprintf("%.1f%%(%d/%d)",
+		float64(len(wn.noWavNotes))/float64(wn.totalNotesCount)*100, len(wn.noWavNotes), wn.totalNotesCount)
+	return Log{
+		Level:      Notice,
+		Message:    fmt.Sprintf("Notes without keysound%s exist: %s", audioText, notesText),
+		Message_ja: fmt.Sprintf("キー音%sの無いノーツがあります: %s", audioText_ja, notesText),
+	}
+}
+
+func CheckWithoutKeysoundBmson(bmsonFile *BmsonFile, wavFileIsExist func(string) bool) (wm *withoutKeysoundMomentsBmson, wn *withoutKeysoundNotesBmson) {
+	iss := CheckSoundChannelNameIsInvalid(bmsonFile)
+	isNoWavName := func(name string) bool {
+		for _, invalidName := range iss {
+			if name == invalidName.name {
+				return true
+			}
+		}
+		if wavFileIsExist != nil && !wavFileIsExist(name) {
+			return true
+		}
+		return false
+	}
+
+	soundNotes := []soundNote{}
+	for _, soundChannel := range bmsonFile.Sound_channels {
+		for _, note := range soundChannel.Notes {
+			if x, ok := note.X.(float64); ok && x-math.Floor(x) == 0 && x > 0 {
+				soundNotes = append(soundNotes, soundNote{fileName: soundChannel.Name, note: note})
+			}
+		}
+	}
+	sort.Slice(soundNotes, func(i, j int) bool { return soundNotes[i].note.Y < soundNotes[j].note.Y })
+
+	noWavNotes := []soundNote{}
+	noWavMoments := []int{}
+	var momentY int
+	momentIsNoWav := true
+	totalMomentCount := 0
+	for i, sNote := range soundNotes {
+		if i == 0 {
+			momentY = sNote.note.Y
+			totalMomentCount++
+		} else if momentY < sNote.note.Y {
+			if momentIsNoWav {
+				noWavMoments = append(noWavMoments, momentY)
+			}
+			momentY = sNote.note.Y
+			momentIsNoWav = true
+			totalMomentCount++
+		}
+		if isNoWavName(sNote.fileName) {
+			noWavNotes = append(noWavNotes, sNote)
+		} else {
+			momentIsNoWav = false
+		}
+	}
+
+	if len(noWavMoments) > 0 {
+		wm = &withoutKeysoundMomentsBmson{withoutKeysoundMoments: withoutKeysoundMoments{
+			wavFileIsExist: wavFileIsExist != nil, noWavMomentCount: len(noWavMoments), momentCount: totalMomentCount}}
+	}
+	if len(noWavNotes) > 0 {
+		wn = &withoutKeysoundNotesBmson{wavFileIsExist: wavFileIsExist != nil, noWavNotes: noWavNotes, totalNotesCount: len(soundNotes)}
+	}
+
+	return wm, wn
 }
 
 // 小数点以下の無駄な0を消去して整える
