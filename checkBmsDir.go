@@ -209,7 +209,7 @@ type notUnifiedDefinitions struct {
 func (nd notUnifiedDefinitions) Log() Log {
 	log := Log{
 		Level:      Warning,
-		Message:    fmt.Sprintf("%s is not unified", nd.command),
+		Message:    fmt.Sprintf("%s are not unified", nd.command),
 		Message_ja: fmt.Sprintf("%sが統一されていません", nd.command),
 		SubLogs:    []string{},
 		SubLogType: Detail,
@@ -461,14 +461,14 @@ type notUnifiedIndexedDefinition struct {
 func (ni notUnifiedIndexedDefinition) Log() Log {
 	return Log{
 		Level:      Warning,
-		Message:    fmt.Sprintf("#%sxx is not unified", strings.ToUpper(ni.otype.string())),
+		Message:    fmt.Sprintf("#%sxx are not unified", strings.ToUpper(ni.otype.string())),
 		Message_ja: fmt.Sprintf("#%sxxが統一されていません", strings.ToUpper(ni.otype.string())),
 		SubLogs:    groupsStrings(ni.pathGroups),
 		SubLogType: Detail,
 	}
 }
 
-func CheckIndexedDefinitionAreUnified(bmsDir *Directory) (nis []notUnifiedIndexedDefinition) {
+func CheckIndexedDefinitionsAreUnified(bmsDir *Directory) (nis []notUnifiedIndexedDefinition) {
 	otypes := []objType{Bmp, Wav}
 	for _, otype := range otypes {
 		makeDefStrs := func(defs []indexedDefinition) (defStrs []string) {
@@ -500,14 +500,14 @@ type notUnifiedObjectStructure struct {
 func (no notUnifiedObjectStructure) Log() Log {
 	return Log{
 		Level:      Warning,
-		Message:    fmt.Sprintf("%s object structure is not unified", strings.ToUpper(no.otype.string())),
+		Message:    fmt.Sprintf("%s object structures are not unified", strings.ToUpper(no.otype.string())),
 		Message_ja: fmt.Sprintf("%sオブジェ構成が統一されていません", strings.ToUpper(no.otype.string())),
 		SubLogs:    groupsStrings(no.pathGroups),
 		SubLogType: Detail,
 	}
 }
 
-func CheckObjectStructreIsUnified(bmsDir *Directory) (nos []notUnifiedObjectStructure) {
+func CheckObjectStructuresAreUnified(bmsDir *Directory) (nos []notUnifiedObjectStructure) {
 	otypes := []objType{Bmp, Wav}
 	for _, otype := range otypes {
 		makeObjStrs := func(bmsFile *BmsFile) (objStrs []string) {

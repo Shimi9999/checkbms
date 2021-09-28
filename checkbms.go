@@ -936,11 +936,11 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 		bmsDir.Logs = append(bmsDir.Logs, result.Log())
 	}
 
-	for _, result := range CheckIndexedDefinitionAreUnified(bmsDir) {
+	for _, result := range CheckIndexedDefinitionsAreUnified(bmsDir) {
 		bmsDir.Logs = append(bmsDir.Logs, result.Log())
 	}
 
-	for _, result := range CheckObjectStructreIsUnified(bmsDir) {
+	for _, result := range CheckObjectStructuresAreUnified(bmsDir) {
 		bmsDir.Logs = append(bmsDir.Logs, result.Log())
 	}
 
