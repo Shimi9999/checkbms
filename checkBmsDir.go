@@ -5,9 +5,11 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/Shimi9999/checkbms/audio"
+	"github.com/Shimi9999/checkbms/bmson"
 	"github.com/Shimi9999/checkbms/diff"
 )
 
@@ -533,6 +535,136 @@ func CheckObjectStructuresAreUnified(bmsDir *Directory) (nos []notUnifiedObjectS
 		}
 	}
 	return nos
+}
+
+type notUnifiedSoundChannels struct {
+	pathGroups [][]string
+}
+
+func (ns notUnifiedSoundChannels) Log() Log {
+	return Log{
+		Level:      Warning,
+		Message:    "Starting points of sound_channels are not unified",
+		Message_ja: "sound_channelsの音声開始地点が統一されていません",
+		SubLogs:    groupsStrings(ns.pathGroups),
+		SubLogType: Detail,
+	}
+}
+
+func CheckSoundChannelsAreUnified(bmsDir *Directory) (ns *notUnifiedSoundChannels) {
+	makeNoteStrs := func(bmsonFile *BmsonFile) (noteStrs []string) {
+		for _, soundChannel := range bmsonFile.Sound_channels {
+			for _, note := range soundChannel.Notes {
+				if note.C == false {
+					noteStrs = append(noteStrs, fmt.Sprintf("%d-%s", note.Y, soundChannel.Name))
+				}
+			}
+		}
+		sort.Slice(noteStrs, func(i, j int) bool { return noteStrs[i] < noteStrs[j] })
+		return noteStrs
+	}
+	pathAndStringss := []pathAndStrings{}
+	for i := range bmsDir.BmsonFiles {
+		pathAndStringss = append(pathAndStringss, pathAndStrings{
+			path: relativePathFromBmsRoot(bmsDir.Path, bmsDir.BmsonFiles[i].Path),
+			strs: makeNoteStrs(&bmsDir.BmsonFiles[i])})
+	}
+
+	groups := groupStringSlice(pathAndStringss)
+	if len(groups) > 1 {
+		ns = &notUnifiedSoundChannels{pathGroups: groups}
+	}
+
+	return ns
+}
+
+type notUnifiedBgaHeader struct {
+	pathGroups [][]string
+}
+
+func (nb notUnifiedBgaHeader) Log() Log {
+	return Log{
+		Level:      Warning,
+		Message:    "bga_header are not unified",
+		Message_ja: "bga_headerが統一されていません",
+		SubLogs:    groupsStrings(nb.pathGroups),
+		SubLogType: Detail,
+	}
+}
+
+func CheckBgaHeadersAreUnified(bmsDir *Directory) (nb *notUnifiedBgaHeader) {
+	makeheaderStrs := func(bmsonFile *BmsonFile) (headerStrs []string) {
+		if bmsonFile.Bga == nil {
+			return nil
+		}
+		for _, header := range bmsonFile.Bga.Bga_header {
+			headerStrs = append(headerStrs, fmt.Sprintf("%d-%s", header.Id, header.Name))
+		}
+		sort.Slice(headerStrs, func(i, j int) bool { return headerStrs[i] < headerStrs[j] })
+		return headerStrs
+	}
+	pathAndStringss := []pathAndStrings{}
+	for i := range bmsDir.BmsonFiles {
+		pathAndStringss = append(pathAndStringss, pathAndStrings{
+			path: relativePathFromBmsRoot(bmsDir.Path, bmsDir.BmsonFiles[i].Path),
+			strs: makeheaderStrs(&bmsDir.BmsonFiles[i])})
+	}
+
+	groups := groupStringSlice(pathAndStringss)
+	if len(groups) > 1 {
+		nb = &notUnifiedBgaHeader{pathGroups: groups}
+	}
+
+	return nb
+}
+
+type notUnifiedBgaEvents struct {
+	pathGroups [][]string
+	eventsName string
+}
+
+func (nb notUnifiedBgaEvents) Log() Log {
+	return Log{
+		Level:      Warning,
+		Message:    fmt.Sprintf("%s are not unified", nb.eventsName),
+		Message_ja: fmt.Sprintf("%sが統一されていません", nb.eventsName),
+		SubLogs:    groupsStrings(nb.pathGroups),
+		SubLogType: Detail,
+	}
+}
+
+func CheckBgaEventsAreUnified(bmsDir *Directory) (nbs []notUnifiedBgaEvents) {
+	eventsNames := []string{"Bga_events", "Layer_events", "Poor_events"}
+	for _, eventsName := range eventsNames {
+		makeEventStrs := func(bmsonFile *BmsonFile) (eventStrs []string) {
+			if bmsonFile.Bga == nil {
+				return nil
+			}
+			bgaValue := reflect.ValueOf(bmsonFile.Bga).Elem()
+			if eventsValue := bgaValue.FieldByName(eventsName); eventsValue.IsValid() {
+				if events, ok := eventsValue.Interface().([]bmson.BGAEvent); ok {
+					for _, event := range events {
+						eventStrs = append(eventStrs, fmt.Sprintf("%d-%d", event.Y, event.Id))
+					}
+					sort.Slice(eventStrs, func(i, j int) bool { return eventStrs[i] < eventStrs[j] })
+					return eventStrs
+				}
+			}
+			return nil
+		}
+		pathAndStringss := []pathAndStrings{}
+		for i := range bmsDir.BmsonFiles {
+			pathAndStringss = append(pathAndStringss, pathAndStrings{
+				path: relativePathFromBmsRoot(bmsDir.Path, bmsDir.BmsonFiles[i].Path),
+				strs: makeEventStrs(&bmsDir.BmsonFiles[i])})
+		}
+
+		groups := groupStringSlice(pathAndStringss)
+		if len(groups) > 1 {
+			nbs = append(nbs, notUnifiedBgaEvents{pathGroups: groups, eventsName: strings.ToLower(eventsName)})
+		}
+	}
+	return nbs
 }
 
 type definitionDiff struct {

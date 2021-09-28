@@ -944,6 +944,18 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 		bmsDir.Logs = append(bmsDir.Logs, result.Log())
 	}
 
+	if result := CheckSoundChannelsAreUnified(bmsDir); result != nil {
+		bmsDir.Logs = append(bmsDir.Logs, result.Log())
+	}
+
+	if result := CheckBgaHeadersAreUnified(bmsDir); result != nil {
+		bmsDir.Logs = append(bmsDir.Logs, result.Log())
+	}
+
+	for _, result := range CheckBgaEventsAreUnified(bmsDir) {
+		bmsDir.Logs = append(bmsDir.Logs, result.Log())
+	}
+
 	// diff
 	// TODO ファイルごとの比較ではなく、WAB/BMP定義・WAB/BMP配置でまとめて比較する？
 	if doDiffCheck {
