@@ -209,8 +209,8 @@ type notUnifiedDefinitions struct {
 func (nd notUnifiedDefinitions) Log() Log {
 	log := Log{
 		Level:      Warning,
-		Message:    fmt.Sprintf("#%s is not unified", strings.ToUpper(nd.command)),
-		Message_ja: fmt.Sprintf("#%sが統一されていません", strings.ToUpper(nd.command)),
+		Message:    fmt.Sprintf("%s is not unified", nd.command),
+		Message_ja: fmt.Sprintf("%sが統一されていません", nd.command),
 		SubLogs:    []string{},
 		SubLogType: Detail,
 	}
@@ -221,24 +221,59 @@ func (nd notUnifiedDefinitions) Log() Log {
 }
 
 func CheckDefinitionsAreUnified(bmsDir *Directory) (nds []notUnifiedDefinitions) {
-	unifyCommands := []string{"stagefile", "banner", "backbmp", "preview"}
-	isNotUnified := make([]bool, len(unifyCommands))
-	values := make([][]string, len(unifyCommands))
-	for i, bmsFile := range bmsDir.BmsFiles {
-		for j, uc := range unifyCommands {
-			values[j] = append(values[j], bmsFile.Header[uc])
-			if i > 0 && values[j][i-1] != bmsFile.Header[uc] {
-				isNotUnified[j] = true
+	type unifyCommand struct {
+		bmsCommand   string
+		bmsonField   string
+		isNotUnified bool
+	}
+
+	unifyCommands := []unifyCommand{
+		{bmsCommand: "stagefile", bmsonField: "eyecatch_image"},
+		{bmsCommand: "banner", bmsonField: "banner_image"},
+		{bmsCommand: "backbmp", bmsonField: "title_image"},
+		{bmsonField: "back_image"},
+		{bmsCommand: "preview", bmsonField: "preview_music"},
+	}
+
+	valueAndPaths := make([][]notUnifiedDefinition, len(unifyCommands))
+	for i, uc := range unifyCommands {
+		if uc.bmsCommand != "" {
+			for _, bmsFile := range bmsDir.BmsFiles {
+				valueAndPaths[i] = append(valueAndPaths[i], notUnifiedDefinition{
+					bmsFilePath: relativePathFromBmsRoot(bmsDir.Path, bmsFile.Path),
+					value:       bmsFile.Header[uc.bmsCommand]})
+				if len(valueAndPaths[i]) >= 2 && valueAndPaths[i][len(valueAndPaths[i])-2].value != bmsFile.Header[uc.bmsCommand] {
+					unifyCommands[i].isNotUnified = true
+				}
+			}
+		}
+		for _, bmsonFile := range bmsDir.BmsonFiles {
+			fieldName := strings.ToUpper(uc.bmsonField[:1]) + uc.bmsonField[1:]
+			infoValue := reflect.ValueOf(bmsonFile.Info).Elem()
+			if value := infoValue.FieldByName(fieldName); value.IsValid() {
+				valStr := value.String()
+				valueAndPaths[i] = append(valueAndPaths[i], notUnifiedDefinition{
+					bmsFilePath: relativePathFromBmsRoot(bmsDir.Path, bmsonFile.Path),
+					value:       valStr})
+				if len(valueAndPaths[i]) >= 2 && valueAndPaths[i][len(valueAndPaths[i])-2].value != valStr {
+					unifyCommands[i].isNotUnified = true
+				}
 			}
 		}
 	}
-	for index, uc := range unifyCommands {
-		if isNotUnified[index] {
-			defs := []notUnifiedDefinition{}
-			for j, bmsFile := range bmsDir.BmsFiles {
-				defs = append(defs, notUnifiedDefinition{bmsFilePath: relativePathFromBmsRoot(bmsDir.Path, bmsFile.Path), value: values[index][j]})
+
+	for i, uc := range unifyCommands {
+		if uc.isNotUnified {
+			commandStr := ""
+			if len(bmsDir.BmsFiles) > 0 && uc.bmsCommand != "" {
+				commandStr += "#" + strings.ToUpper(uc.bmsCommand)
+				if len(bmsDir.BmsonFiles) > 0 {
+					commandStr += fmt.Sprintf("(info.%s)", uc.bmsonField)
+				}
+			} else if len(bmsDir.BmsonFiles) > 0 {
+				commandStr += "info." + uc.bmsonField
 			}
-			nds = append(nds, notUnifiedDefinitions{command: uc, defs: defs})
+			nds = append(nds, notUnifiedDefinitions{command: commandStr, defs: valueAndPaths[i]})
 		}
 	}
 	return nds
