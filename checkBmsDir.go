@@ -416,37 +416,59 @@ func CheckSameHashBmsFiles(bmsDir *Directory) (sbs []sameHashBmsFiles) {
 	return sbs
 }
 
+type pathAndStrings struct {
+	path string
+	strs []string
+}
+
+func groupsStrings(groups [][]string) (strs []string) {
+	for i, group := range groups {
+		groupStr := ""
+		for j, str := range group {
+			groupStr += str
+			if j < len(group)-1 {
+				groupStr += ", "
+			}
+		}
+		strs = append(strs, fmt.Sprintf("Group%d: %s", i+1, groupStr))
+	}
+	return strs
+}
+
+func groupStringSlice(pathAndStringss []pathAndStrings) (groups [][]string) {
+	pss := append([]pathAndStrings{}, pathAndStringss...)
+	for len(pss) > 0 {
+		targetStructre := pss[0]
+		groups = append(groups, []string{targetStructre.path})
+		gi := len(groups) - 1
+		pss = pss[1:]
+		for j := 0; j < len(pss); j++ {
+			if reflect.DeepEqual(targetStructre.strs, pss[j].strs) {
+				groups[gi] = append(groups[gi], pss[j].path)
+				pss = append(pss[:j], pss[j+1:]...)
+				j--
+			}
+		}
+	}
+	return groups
+}
+
 type notUnifiedIndexedDefinition struct {
 	otype      objType
 	pathGroups [][]string
 }
 
 func (ni notUnifiedIndexedDefinition) Log() Log {
-	log := Log{
+	return Log{
 		Level:      Warning,
 		Message:    fmt.Sprintf("#%sxx is not unified", strings.ToUpper(ni.otype.string())),
 		Message_ja: fmt.Sprintf("#%sxxが統一されていません", strings.ToUpper(ni.otype.string())),
-		SubLogs:    []string{},
+		SubLogs:    groupsStrings(ni.pathGroups),
 		SubLogType: Detail,
 	}
-	for i, pathGroup := range ni.pathGroups {
-		groupStr := ""
-		for j, bmsFilePath := range pathGroup {
-			groupStr += bmsFilePath
-			if j < len(pathGroup)-1 {
-				groupStr += ", "
-			}
-		}
-		log.SubLogs = append(log.SubLogs, fmt.Sprintf("Group%d: %s", i+1, groupStr))
-	}
-	return log
 }
 
 func CheckIndexedDefinitionAreUnified(bmsDir *Directory) (nis []notUnifiedIndexedDefinition) {
-	type definition struct {
-		bmsFilePath string
-		defStrs     []string
-	}
 	otypes := []objType{Bmp, Wav}
 	for _, otype := range otypes {
 		makeDefStrs := func(defs []indexedDefinition) (defStrs []string) {
@@ -455,28 +477,14 @@ func CheckIndexedDefinitionAreUnified(bmsDir *Directory) (nis []notUnifiedIndexe
 			}
 			return defStrs
 		}
-		definitions := []definition{}
+		definitions := []pathAndStrings{}
 		for i := range bmsDir.BmsFiles {
-			definitions = append(definitions, definition{
-				bmsFilePath: relativePathFromBmsRoot(bmsDir.Path, bmsDir.BmsFiles[i].Path),
-				defStrs:     makeDefStrs(bmsDir.BmsFiles[i].headerIndexedDefs(otype))})
+			definitions = append(definitions, pathAndStrings{
+				path: relativePathFromBmsRoot(bmsDir.Path, bmsDir.BmsFiles[i].Path),
+				strs: makeDefStrs(bmsDir.BmsFiles[i].headerIndexedDefs(otype))})
 		}
 
-		groups := [][]string{}
-		for len(definitions) > 0 {
-			targetDefinition := definitions[0]
-			groups = append(groups, []string{targetDefinition.bmsFilePath})
-			gi := len(groups) - 1
-			definitions = definitions[1:]
-			for j := 0; j < len(definitions); j++ {
-				if reflect.DeepEqual(targetDefinition.defStrs, definitions[j].defStrs) {
-					groups[gi] = append(groups[gi], definitions[j].bmsFilePath)
-					definitions = append(definitions[:j], definitions[j+1:]...)
-					j--
-				}
-			}
-		}
-
+		groups := groupStringSlice(definitions)
 		if len(groups) > 1 {
 			nis = append(nis, notUnifiedIndexedDefinition{otype: otype, pathGroups: groups})
 		}
@@ -490,31 +498,16 @@ type notUnifiedObjectStructure struct {
 }
 
 func (no notUnifiedObjectStructure) Log() Log {
-	log := Log{
+	return Log{
 		Level:      Warning,
 		Message:    fmt.Sprintf("%s object structure is not unified", strings.ToUpper(no.otype.string())),
 		Message_ja: fmt.Sprintf("%sオブジェ構成が統一されていません", strings.ToUpper(no.otype.string())),
-		SubLogs:    []string{},
+		SubLogs:    groupsStrings(no.pathGroups),
 		SubLogType: Detail,
 	}
-	for i, pathGroup := range no.pathGroups {
-		groupStr := ""
-		for j, bmsFilePath := range pathGroup {
-			groupStr += bmsFilePath
-			if j < len(pathGroup)-1 {
-				groupStr += ", "
-			}
-		}
-		log.SubLogs = append(log.SubLogs, fmt.Sprintf("Group%d: %s", i+1, groupStr))
-	}
-	return log
 }
 
 func CheckObjectStructreIsUnified(bmsDir *Directory) (nos []notUnifiedObjectStructure) {
-	type structure struct {
-		bmsFilePath string
-		objStrs     []string
-	}
 	otypes := []objType{Bmp, Wav}
 	for _, otype := range otypes {
 		makeObjStrs := func(bmsFile *BmsFile) (objStrs []string) {
@@ -527,28 +520,14 @@ func CheckObjectStructreIsUnified(bmsDir *Directory) (nos []notUnifiedObjectStru
 			}
 			return objStrs
 		}
-		structures := []structure{}
+		structures := []pathAndStrings{}
 		for i := range bmsDir.BmsFiles {
-			structures = append(structures, structure{
-				bmsFilePath: relativePathFromBmsRoot(bmsDir.Path, bmsDir.BmsFiles[i].Path),
-				objStrs:     makeObjStrs(&bmsDir.BmsFiles[i])})
+			structures = append(structures, pathAndStrings{
+				path: relativePathFromBmsRoot(bmsDir.Path, bmsDir.BmsFiles[i].Path),
+				strs: makeObjStrs(&bmsDir.BmsFiles[i])})
 		}
 
-		groups := [][]string{}
-		for len(structures) > 0 {
-			targetStructre := structures[0]
-			groups = append(groups, []string{targetStructre.bmsFilePath})
-			gi := len(groups) - 1
-			structures = structures[1:]
-			for j := 0; j < len(structures); j++ {
-				if reflect.DeepEqual(targetStructre.objStrs, structures[j].objStrs) {
-					groups[gi] = append(groups[gi], structures[j].bmsFilePath)
-					structures = append(structures[:j], structures[j+1:]...)
-					j--
-				}
-			}
-		}
-
+		groups := groupStringSlice(structures)
 		if len(groups) > 1 {
 			nos = append(nos, notUnifiedObjectStructure{otype: otype, pathGroups: groups})
 		}
