@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -461,22 +462,37 @@ func (log Log) StringWithLang(lang string) (str string) {
 
 type Logs []Log
 
-/*func (logs *Logs) addLogFromResult(result interface{}) {
-	//fmt.Println(reflect.TypeOf(result), reflect.TypeOf(result).Implements(cr), reflect.TypeOf(result).Elem().Implements(cr))
-	if r, ok := result.(checkResult); ok {
-		if r != nil {
-			*logs = append(*logs, r.Log())
+func (logs *Logs) add(log Log) {
+	*logs = append(*logs, log)
+}
+
+// checkResultのスライス/ポインタ、もしくはLogのスライスからLogを追加する
+func (logs *Logs) addResultLog(argResult interface{}) {
+	argValue := reflect.ValueOf(argResult)
+	switch argValue.Kind() {
+	case reflect.Slice:
+		for i := 0; i < argValue.Len(); i++ {
+			iv := argValue.Index(i)
+			if result, ok := iv.Interface().(checkResult); ok {
+				logs.add(result.Log())
+			} else if log, ok := iv.Interface().(Log); ok {
+				logs.add(log)
+			}
 		}
-	} else if reflect.TypeOf(result).Kind() == reflect.Slice && reflect.TypeOf(result).Elem().Implements(reflect.TypeOf((*checkResult)(nil)).Elem()) {
-		results := reflect.ValueOf(result)
-		for i := 0; i < results.Len(); i++ {
-			r := results.Index(i).Interface().(checkResult)
-			if r != nil {
-				*logs = append(*logs, r.Log())
+	case reflect.Ptr:
+		if !argValue.IsNil() {
+			if result, ok := argValue.Elem().Interface().(checkResult); ok {
+				logs.add(result.Log())
 			}
 		}
 	}
-}*/
+}
+func (logs *Logs) addResultLogs(argResults ...interface{}) {
+	for _, argResult := range argResults {
+		logs.addResultLog(argResult)
+	}
+}
+
 func (logs Logs) String() string {
 	return logs.StringWithLang("en")
 }
@@ -489,6 +505,10 @@ func (logs Logs) StringWithLang(lang string) string {
 		str += log.StringWithLang(lang)
 	}
 	return str
+}
+
+type checkResult interface {
+	Log() Log
 }
 
 type CommandType int
@@ -741,112 +761,37 @@ func ReadBmsFileBase(path string) (bmsFileBase *BmsFileBase, _ error) {
 }
 
 func CheckBmsFile(bmsFile *BmsFile) {
-	if logs := CheckHeaderCommands(bmsFile); len(logs) > 0 {
-		bmsFile.Logs = append(bmsFile.Logs, logs...)
-	}
-
-	if result := CheckTitleAndSubtitleHaveSameText(bmsFile); result != nil {
-		bmsFile.Logs = append(bmsFile.Logs, result.Log())
-	}
-
-	func() {
-		results1, results2, results3, result4 := CheckIndexedDefinitionsHaveInvalidValue(bmsFile)
-		for _, result := range results1 {
-			bmsFile.Logs = append(bmsFile.Logs, result.Log())
-		}
-		for _, result := range results2 {
-			bmsFile.Logs = append(bmsFile.Logs, result.Log())
-		}
-		for _, result := range results3 {
-			bmsFile.Logs = append(bmsFile.Logs, result.Log())
-		}
-		if result4 != nil {
-			bmsFile.Logs = append(bmsFile.Logs, result4.Log())
-		}
-	}()
-
-	if result := CheckTotalnotesIsZero(&bmsFile.BmsFileBase); result != nil {
-		bmsFile.Logs = append(bmsFile.Logs, result.Log())
-	}
-
-	if result := CheckWavObjExistsIn0thMeasure(bmsFile); result != nil {
-		bmsFile.Logs = append(bmsFile.Logs, result.Log())
-	}
-
-	func() {
-		results1, results2 := CheckPlacedObjIsDefinedAndDefinedHeaderIsPlaced(bmsFile)
-		for _, result := range results1 {
-			bmsFile.Logs = append(bmsFile.Logs, result.Log())
-		}
-		for _, result := range results2 {
-			bmsFile.Logs = append(bmsFile.Logs, result.Log())
-		}
-	}()
-
-	if result := CheckSoundOfMineExplosionIsUsed(bmsFile); result != nil {
-		bmsFile.Logs = append(bmsFile.Logs, result.Log())
-	}
-
-	for _, result := range CheckWavDuplicate(bmsFile) {
-		bmsFile.Logs = append(bmsFile.Logs, result.Log())
-	}
-
-	for _, result := range CheckNoteOverlap(bmsFile) {
-		bmsFile.Logs = append(bmsFile.Logs, result.Log())
-	}
-
-	func() {
-		results1, results2 := CheckEndOfLNExistsAndNotesInLN(bmsFile)
-		for _, result := range results1 {
-			bmsFile.Logs = append(bmsFile.Logs, result.Log())
-		}
-		for _, result := range results2 {
-			bmsFile.Logs = append(bmsFile.Logs, result.Log())
-		}
-	}()
-
-	for _, result := range CheckBpmValue(bmsFile) {
-		bmsFile.Logs = append(bmsFile.Logs, result.Log())
-	}
-
-	func() {
-		results1, results2 := CheckMeasureLength(bmsFile)
-		for _, result := range results1 {
-			bmsFile.Logs = append(bmsFile.Logs, result.Log())
-		}
-		for _, result := range results2 {
-			bmsFile.Logs = append(bmsFile.Logs, result.Log())
-		}
-	}()
-
-	func() {
-		result1, result2 := CheckWithoutKeysound(bmsFile, nil)
-		if result1 != nil {
-			bmsFile.Logs = append(bmsFile.Logs, result1.Log())
-		}
-		if result2 != nil {
-			bmsFile.Logs = append(bmsFile.Logs, result2.Log())
-		}
-	}()
+	bmsFile.Logs.addResultLogs(CheckHeaderCommands(bmsFile))
+	bmsFile.Logs.addResultLogs(CheckTitleAndSubtitleHaveSameText(bmsFile))
+	bmsFile.Logs.addResultLogs(CheckIndexedDefinitionsHaveInvalidValue(bmsFile))
+	bmsFile.Logs.addResultLogs(CheckTotalnotesIsZero(&bmsFile.BmsFileBase))
+	bmsFile.Logs.addResultLogs(CheckWavObjExistsIn0thMeasure(bmsFile))
+	bmsFile.Logs.addResultLogs(CheckPlacedObjIsDefinedAndDefinedHeaderIsPlaced(bmsFile))
+	bmsFile.Logs.addResultLogs(CheckSoundOfMineExplosionIsUsed(bmsFile))
+	bmsFile.Logs.addResultLogs(CheckWavDuplicate(bmsFile))
+	bmsFile.Logs.addResultLogs(CheckNoteOverlap(bmsFile))
+	bmsFile.Logs.addResultLogs(CheckEndOfLNExistsAndNotesInLN(bmsFile))
+	bmsFile.Logs.addResultLogs(CheckBpmValue(bmsFile))
+	bmsFile.Logs.addResultLogs(CheckMeasureLength(bmsFile))
+	bmsFile.Logs.addResultLogs(CheckWithoutKeysound(bmsFile, nil))
 }
 
 func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 	for i := range bmsDir.BmsFiles {
 		CheckBmsFile(&bmsDir.BmsFiles[i])
 
-		for _, result := range CheckDefinedFilesExist(bmsDir, &bmsDir.BmsFiles[i]) {
-			bmsDir.Logs = append(bmsDir.Logs, result.Log())
-		}
+		bmsDir.Logs.addResultLogs(CheckDefinedFilesExist(bmsDir, &bmsDir.BmsFiles[i]))
 
 		pathsOfdoNotExistWavs := []string{}
-		for _, result := range CheckDefinedWavFilesExist(bmsDir, &bmsDir.BmsFiles[i]) {
-			bmsDir.Logs = append(bmsDir.Logs, result.Log())
-			pathsOfdoNotExistWavs = append(pathsOfdoNotExistWavs, result.filePath)
-		}
+		func() {
+			results := CheckDefinedWavFilesExist(bmsDir, &bmsDir.BmsFiles[i])
+			bmsDir.Logs.addResultLogs(results)
+			for _, result := range results {
+				pathsOfdoNotExistWavs = append(pathsOfdoNotExistWavs, result.filePath)
+			}
+		}()
 
-		for _, result := range CheckDefinedBmpFilesExist(bmsDir, &bmsDir.BmsFiles[i]) {
-			bmsDir.Logs = append(bmsDir.Logs, result.Log())
-		}
+		bmsDir.Logs.addResultLogs(CheckDefinedBmpFilesExist(bmsDir, &bmsDir.BmsFiles[i]))
 
 		// count moments and notes without keysound (or audio file)
 		if len(pathsOfdoNotExistWavs) > 0 {
@@ -858,15 +803,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 				}
 				return true
 			}
-			func() {
-				result1, result2 := CheckWithoutKeysound(&bmsDir.BmsFiles[i], wavFileIsExist)
-				if result1 != nil {
-					bmsDir.BmsFiles[i].Logs = append(bmsDir.BmsFiles[i].Logs, result1.Log())
-				}
-				if result2 != nil {
-					bmsDir.BmsFiles[i].Logs = append(bmsDir.BmsFiles[i].Logs, result2.Log())
-				}
-			}()
+			bmsDir.Logs.addResultLogs(CheckWithoutKeysound(&bmsDir.BmsFiles[i], wavFileIsExist))
 		}
 	}
 
@@ -877,19 +814,18 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 
 		CheckBmsonFile(&bmsDir.BmsonFiles[i])
 
-		for _, result := range CheckDefinedInfoFilesExistBmson(bmsDir, &bmsDir.BmsonFiles[i]) {
-			bmsDir.Logs = append(bmsDir.Logs, result.Log())
-		}
+		bmsDir.Logs.addResultLogs(CheckDefinedInfoFilesExistBmson(bmsDir, &bmsDir.BmsonFiles[i]))
 
 		pathsOfdoNotExistWavs := []string{}
-		for _, result := range CheckDefinedSoundFilesExistBmson(bmsDir, &bmsDir.BmsonFiles[i]) {
-			bmsDir.Logs = append(bmsDir.Logs, result.Log())
-			pathsOfdoNotExistWavs = append(pathsOfdoNotExistWavs, result.filePath)
-		}
+		func() {
+			results := CheckDefinedSoundFilesExistBmson(bmsDir, &bmsDir.BmsonFiles[i])
+			bmsDir.Logs.addResultLogs(results)
+			for _, result := range results {
+				pathsOfdoNotExistWavs = append(pathsOfdoNotExistWavs, result.filePath)
+			}
+		}()
 
-		for _, result := range CheckDefinedBgaFilesExistBmson(bmsDir, &bmsDir.BmsonFiles[i]) {
-			bmsDir.Logs = append(bmsDir.Logs, result.Log())
-		}
+		bmsDir.Logs.addResultLogs(CheckDefinedBgaFilesExistBmson(bmsDir, &bmsDir.BmsonFiles[i]))
 
 		if len(pathsOfdoNotExistWavs) > 0 {
 			wavFileIsExist := func(path string) bool {
@@ -900,73 +836,31 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 				}
 				return true
 			}
-			func() {
-				result1, result2 := CheckWithoutKeysoundBmson(&bmsDir.BmsonFiles[i], wavFileIsExist)
-				if result1 != nil {
-					bmsDir.BmsonFiles[i].Logs = append(bmsDir.BmsonFiles[i].Logs, result1.Log())
-				}
-				if result2 != nil {
-					bmsDir.BmsonFiles[i].Logs = append(bmsDir.BmsonFiles[i].Logs, result2.Log())
-				}
-			}()
+			bmsDir.Logs.addResultLogs(CheckWithoutKeysoundBmson(&bmsDir.BmsonFiles[i], wavFileIsExist))
 		}
 	}
 
-	for _, result := range CheckDefinitionsAreUnified(bmsDir) {
-		bmsDir.Logs = append(bmsDir.Logs, result.Log())
-	}
+	bmsDir.Logs.addResultLogs(CheckDefinitionsAreUnified(bmsDir))
+	bmsDir.Logs.addResultLogs(CheckUnusedFile(bmsDir))
+	bmsDir.Logs.addResultLogs(CheckEmptyDirectory(bmsDir))
+	bmsDir.Logs.addResultLogs(CheckEnvironmentDependentFilename(bmsDir))
+	bmsDir.Logs.addResultLogs(CheckOver1MinuteAudioFile(bmsDir))
+	bmsDir.Logs.addResultLogs(CheckSameHashBmsFiles(bmsDir))
 
-	for _, result := range CheckUnusedFile(bmsDir) {
-		bmsDir.Logs = append(bmsDir.Logs, result.Log())
-	}
+	bmsDir.Logs.addResultLogs(CheckIndexedDefinitionsAreUnified(bmsDir))
+	bmsDir.Logs.addResultLogs(CheckObjectStructuresAreUnified(bmsDir))
 
-	for _, result := range CheckEmptyDirectory(bmsDir) {
-		bmsDir.Logs = append(bmsDir.Logs, result.Log())
-	}
-
-	for _, result := range CheckEnvironmentDependentFilename(bmsDir) {
-		bmsDir.Logs = append(bmsDir.Logs, result.Log())
-	}
-
-	for _, result := range CheckOver1MinuteAudioFile(bmsDir) {
-		bmsDir.Logs = append(bmsDir.Logs, result.Log())
-	}
-
-	for _, result := range CheckSameHashBmsFiles(bmsDir) {
-		bmsDir.Logs = append(bmsDir.Logs, result.Log())
-	}
-
-	for _, result := range CheckIndexedDefinitionsAreUnified(bmsDir) {
-		bmsDir.Logs = append(bmsDir.Logs, result.Log())
-	}
-
-	for _, result := range CheckObjectStructuresAreUnified(bmsDir) {
-		bmsDir.Logs = append(bmsDir.Logs, result.Log())
-	}
-
-	if result := CheckSoundChannelsAreUnified(bmsDir); result != nil {
-		bmsDir.Logs = append(bmsDir.Logs, result.Log())
-	}
-
-	if result := CheckBgaHeadersAreUnified(bmsDir); result != nil {
-		bmsDir.Logs = append(bmsDir.Logs, result.Log())
-	}
-
-	for _, result := range CheckBgaEventsAreUnified(bmsDir) {
-		bmsDir.Logs = append(bmsDir.Logs, result.Log())
-	}
+	bmsDir.Logs.addResultLogs(CheckSoundChannelsAreUnified(bmsDir))
+	bmsDir.Logs.addResultLogs(CheckBgaHeadersAreUnified(bmsDir))
+	bmsDir.Logs.addResultLogs(CheckBgaEventsAreUnified(bmsDir))
 
 	// diff
 	// TODO ファイルごとの比較ではなく、WAB/BMP定義・WAB/BMP配置でまとめて比較する？
 	if doDiffCheck {
 		for i := 0; i < len(bmsDir.BmsFiles); i++ {
 			for j := i + 1; j < len(bmsDir.BmsFiles); j++ {
-				for _, result := range CheckDefinitionDiff(bmsDir.Path, &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j]) {
-					bmsDir.Logs = append(bmsDir.Logs, result.Log())
-				}
-				for _, result := range CheckObjectDiff(bmsDir.Path, &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j]) {
-					bmsDir.Logs = append(bmsDir.Logs, result.Log())
-				}
+				bmsDir.Logs.addResultLogs(CheckDefinitionDiff(bmsDir.Path, &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j]))
+				bmsDir.Logs.addResultLogs(CheckObjectDiff(bmsDir.Path, &bmsDir.BmsFiles[i], &bmsDir.BmsFiles[j]))
 			}
 		}
 	}

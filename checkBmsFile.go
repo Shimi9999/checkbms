@@ -16,10 +16,6 @@ import (
 	"golang.org/x/text/transform"
 )
 
-type checkResult interface {
-	Log() Log
-}
-
 type duplicateDefinition struct {
 	command  string
 	oldValue string
@@ -625,7 +621,7 @@ func (puo *placedUndefinedObj) initObjValues() {
 	})
 }
 
-func (puo *placedUndefinedObj) Log() Log {
+func (puo placedUndefinedObj) Log() Log {
 	log := Log{
 		Level:      Warning,
 		Message:    fmt.Sprintf("Placed %s object is undefined", puo.oType.string()),
@@ -633,9 +629,9 @@ func (puo *placedUndefinedObj) Log() Log {
 		SubLogs:    []string{}, //[]SubLog{},
 		SubLogType: List,
 	}
-	if puo.objValues == nil {
+	/*if puo.objValues == nil {
 		puo.initObjValues()
-	}
+	}*/
 	for _, objValue := range puo.objValues {
 		//log.SubLogs = append(log.SubLogs, SubLog{Message: fmt.Sprintf("%s", objValue)})
 		log.SubLogs = append(log.SubLogs, strings.ToUpper(objValue))
@@ -703,6 +699,7 @@ func CheckPlacedObjIsDefinedAndDefinedHeaderIsPlaced(bmsFile *BmsFile) (puos []p
 	puosTmp[4], duosTmp[4] = checkDefinedAndPlaced(Scroll, bmsFile.HeaderScroll, bmsFile.BmsScrollObjs, "", "")
 	for _, puo := range puosTmp {
 		if puo != nil {
+			puo.initObjValues()
 			puos = append(puos, *puo)
 		}
 	}

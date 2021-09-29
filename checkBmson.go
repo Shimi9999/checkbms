@@ -222,63 +222,19 @@ func CheckBmsonFile(bmsonFile *BmsonFile) {
 		return
 	}
 
-	if logs := CheckBmsonInfo(bmsonFile); len(logs) > 0 {
-		bmsonFile.Logs = append(bmsonFile.Logs, logs...)
-	}
-
-	for _, result := range CheckTitleTextsAreDuplicate(bmsonFile) {
-		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
-	}
-
-	for _, result := range CheckSoundChannelNameIsInvalid(bmsonFile) {
-		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
-	}
-
-	for _, result := range CheckNonNotesSoundChannel(bmsonFile) {
-		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
-	}
-
-	if result := CheckNoWavSoundChannels(bmsonFile); result != nil {
-		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
-	}
-
-	if result := CheckTotalnotesIsZero(&bmsonFile.BmsFileBase); result != nil {
-		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
-	}
-
-	if result := CheckSoundNotesIn0thMeasure(bmsonFile); result != nil {
-		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
-	}
-
-	for _, result := range CheckPlacedUndefiedBgaIds(bmsonFile) {
-		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
-	}
-
-	if result := CheckDefinedUnplacedBgaHeader(bmsonFile); result != nil {
-		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
-	}
-
-	for _, result := range CheckBgaHeaderIdIsDuplicate(bmsonFile) {
-		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
-	}
-
-	for _, result := range CheckDuplicateY(bmsonFile) {
-		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
-	}
-
-	for _, result := range CheckNoteInLNBmson(bmsonFile) {
-		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
-	}
-
-	func() {
-		result1, result2 := CheckWithoutKeysoundBmson(bmsonFile, nil)
-		if result1 != nil {
-			bmsonFile.Logs = append(bmsonFile.Logs, result1.Log())
-		}
-		if result2 != nil {
-			bmsonFile.Logs = append(bmsonFile.Logs, result2.Log())
-		}
-	}()
+	bmsonFile.Logs.addResultLogs(CheckBmsonInfo(bmsonFile))
+	bmsonFile.Logs.addResultLogs(CheckTitleTextsAreDuplicate(bmsonFile))
+	bmsonFile.Logs.addResultLogs(CheckSoundChannelNameIsInvalid(bmsonFile))
+	bmsonFile.Logs.addResultLogs(CheckNonNotesSoundChannel(bmsonFile))
+	bmsonFile.Logs.addResultLogs(CheckNoWavSoundChannels(bmsonFile))
+	bmsonFile.Logs.addResultLogs(CheckTotalnotesIsZero(&bmsonFile.BmsFileBase))
+	bmsonFile.Logs.addResultLogs(CheckSoundNotesIn0thMeasure(bmsonFile))
+	bmsonFile.Logs.addResultLogs(CheckPlacedUndefiedBgaIds(bmsonFile))
+	bmsonFile.Logs.addResultLogs(CheckDefinedUnplacedBgaHeader(bmsonFile))
+	bmsonFile.Logs.addResultLogs(CheckBgaHeaderIdIsDuplicate(bmsonFile))
+	bmsonFile.Logs.addResultLogs(CheckDuplicateY(bmsonFile))
+	bmsonFile.Logs.addResultLogs(CheckNoteInLNBmson(bmsonFile))
+	bmsonFile.Logs.addResultLogs(CheckWithoutKeysoundBmson(bmsonFile, nil))
 }
 
 var infoFields = []Command{
