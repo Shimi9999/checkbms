@@ -254,6 +254,10 @@ func CheckBmsonFile(bmsonFile *BmsonFile) {
 		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
 	}
 
+	for _, result := range CheckBgaHeaderIdIsDuplicate(bmsonFile) {
+		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
+	}
+
 	for _, result := range CheckDuplicateY(bmsonFile) {
 		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
 	}
@@ -561,8 +565,13 @@ func CheckPlacedUndefiedBgaIds(bmsonFile *BmsonFile) (pus []placedUndefinedBgaId
 	return pus
 }
 
+type indexedHeader struct {
+	index int
+	bmson.BGAHeader
+}
+
 type definedUnplacedBgaHeader struct {
-	headers []bmson.BGAHeader
+	headers []indexedHeader
 }
 
 func (b definedUnplacedBgaHeader) Log() Log {
@@ -574,7 +583,7 @@ func (b definedUnplacedBgaHeader) Log() Log {
 		SubLogType: List,
 	}
 	for _, header := range b.headers {
-		log.SubLogs = append(log.SubLogs, fmt.Sprintf("id:%d, name:%s", header.Id, header.Name))
+		log.SubLogs = append(log.SubLogs, fmt.Sprintf("[%d] {id:%d name:%s}", header.index, header.Id, header.Name))
 	}
 	return log
 }
@@ -584,9 +593,9 @@ func CheckDefinedUnplacedBgaHeader(bmsonFile *BmsonFile) (du *definedUnplacedBga
 		return nil
 	}
 
-	unplacedBgaHeaders := []bmson.BGAHeader{}
+	unplacedBgaHeaders := []indexedHeader{}
 	bgaEventss := [][]bmson.BGAEvent{bmsonFile.Bga.Bga_events, bmsonFile.Bga.Layer_events, bmsonFile.Bga.Poor_events}
-	for _, header := range bmsonFile.Bga.Bga_header {
+	for i, header := range bmsonFile.Bga.Bga_header {
 		placed := false
 		for _, bgaEvents := range bgaEventss {
 			for _, bgaEvent := range bgaEvents {
@@ -600,13 +609,51 @@ func CheckDefinedUnplacedBgaHeader(bmsonFile *BmsonFile) (du *definedUnplacedBga
 			}
 		}
 		if !placed {
-			unplacedBgaHeaders = append(unplacedBgaHeaders, header)
+			unplacedBgaHeaders = append(unplacedBgaHeaders, indexedHeader{index: i, BGAHeader: header})
 		}
 	}
 	if len(unplacedBgaHeaders) > 0 {
 		du = &definedUnplacedBgaHeader{headers: unplacedBgaHeaders}
 	}
 	return du
+}
+
+type duplicateBgaHeaderId struct {
+	id             int
+	indexedHeaders []indexedHeader
+}
+
+func (d duplicateBgaHeaderId) Log() Log {
+	log := Log{
+		Level:      Warning,
+		Message:    fmt.Sprintf("bga_header has duplicate id: %d * %d", d.id, len(d.indexedHeaders)),
+		Message_ja: fmt.Sprintf("bga_headerでidが重複しています: %d * %d", d.id, len(d.indexedHeaders)),
+		SubLogs:    []string{},
+		SubLogType: Detail,
+	}
+	for _, header := range d.indexedHeaders {
+		log.SubLogs = append(log.SubLogs, fmt.Sprintf("bga_header[%d] {id:%d name:%s}", header.index, header.Id, header.Name))
+	}
+	return log
+}
+
+func CheckBgaHeaderIdIsDuplicate(bmsonFile *BmsonFile) (dis []duplicateBgaHeaderId) {
+	if bmsonFile.Bga == nil {
+		return nil
+	}
+
+	idMap := map[int][]indexedHeader{}
+	for i, header := range bmsonFile.Bga.Bga_header {
+		idMap[header.Id] = append(idMap[header.Id], indexedHeader{index: i, BGAHeader: header})
+	}
+	for id, headers := range idMap {
+		if len(headers) >= 2 {
+			dis = append(dis, duplicateBgaHeaderId{id: id, indexedHeaders: headers})
+		}
+	}
+	sort.SliceStable(dis, func(i, j int) bool { return dis[i].id < dis[j].id })
+
+	return dis
 }
 
 type yObject struct {
