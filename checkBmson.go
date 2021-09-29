@@ -234,6 +234,10 @@ func CheckBmsonFile(bmsonFile *BmsonFile) {
 		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
 	}
 
+	for _, result := range CheckNonNotesSoundChannel(bmsonFile) {
+		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
+	}
+
 	if result := CheckNoWavSoundChannels(bmsonFile); result != nil {
 		bmsonFile.Logs = append(bmsonFile.Logs, result.Log())
 	}
@@ -446,6 +450,28 @@ func CheckSoundChannelNameIsInvalid(bmsonFile *BmsonFile) (iss []invalidSoundCha
 	return iss
 }
 
+type nonNotesSoundChannel struct {
+	name  string
+	index int
+}
+
+func (n nonNotesSoundChannel) Log() Log {
+	return Log{
+		Level:      Warning,
+		Message:    fmt.Sprintf("sound_channels[%d].notes is empty: name:%s", n.index, n.name),
+		Message_ja: fmt.Sprintf("sound_channels[%d].notesが空です: name:%s", n.index, n.name),
+	}
+}
+
+func CheckNonNotesSoundChannel(bmsonFile *BmsonFile) (nss []nonNotesSoundChannel) {
+	for i, soundChannel := range bmsonFile.Sound_channels {
+		if len(soundChannel.Notes) == 0 {
+			nss = append(nss, nonNotesSoundChannel{name: soundChannel.Name, index: i})
+		}
+	}
+	return nss
+}
+
 type noWavSoundChannels struct {
 	noWavSoundChannels []bmson.SoundChannel
 }
@@ -474,8 +500,14 @@ func CheckNoWavSoundChannels(bmsonFile *BmsonFile) (nw *noWavSoundChannels) {
 }
 
 type soundNote struct {
-	fileName string
-	note     bmson.Note
+	fileName     string
+	channelIndex int
+	note         bmson.Note
+	noteIndex    int
+}
+
+func (n soundNote) string() string {
+	return fmt.Sprintf("[%d](%s)[%d] {x:%v, y:%d}", n.channelIndex, n.fileName, n.noteIndex, n.note.X, n.note.Y)
 }
 
 type soundNotesIn0thMeasure struct {
@@ -491,7 +523,7 @@ func (sn soundNotesIn0thMeasure) Log() Log {
 		SubLogType: List,
 	}
 	for _, soundNote := range sn.soundNotes {
-		log.SubLogs = append(log.SubLogs, fmt.Sprintf("%s(x:%v, y:%d)", soundNote.fileName, soundNote.note.X, soundNote.note.Y))
+		log.SubLogs = append(log.SubLogs, soundNote.string())
 	}
 	return log
 }
@@ -505,10 +537,11 @@ func CheckSoundNotesIn0thMeasure(bmsonFile *BmsonFile) *soundNotesIn0thMeasure {
 		}
 	}
 	detectedSoundNotes := []soundNote{}
-	for _, soundChannel := range bmsonFile.Sound_channels {
-		for _, note := range soundChannel.Notes {
+	for ci, soundChannel := range bmsonFile.Sound_channels {
+		for ni, note := range soundChannel.Notes {
 			if x, ok := note.X.(float64); ok && x > 0 && note.Y < firstBarY {
-				detectedSoundNotes = append(detectedSoundNotes, soundNote{fileName: soundChannel.Name, note: note})
+				detectedSoundNotes = append(detectedSoundNotes, soundNote{
+					fileName: soundChannel.Name, channelIndex: ci, note: note, noteIndex: ni})
 			}
 		}
 	}
@@ -789,24 +822,22 @@ func (n noteInLNBmson) Log() Log {
 		noteType = "Long"
 		noteType_ja = "ロング"
 	}
-	noteStr := func(soundNote *soundNote) string {
-		return fmt.Sprintf("%s(x:%v, y:%d)", soundNote.fileName, soundNote.note.X, soundNote.note.Y)
-	}
 	return Log{
 		Level:      Error,
-		Message:    fmt.Sprintf("%s note is in LN: %s in %s", noteType, noteStr(n.ln), noteStr(n.containedNote)),
-		Message_ja: fmt.Sprintf("%sノーツがLNの中に配置されています: %s in %s", noteType_ja, noteStr(n.ln), noteStr(n.containedNote)),
+		Message:    fmt.Sprintf("%s note is in LN: %s in %s", noteType, n.containedNote.string(), n.ln.string()),
+		Message_ja: fmt.Sprintf("%sノーツがLNの中に配置されています: %s in %s", noteType_ja, n.containedNote.string(), n.ln.string()),
 	}
 }
 
 func CheckNoteInLNBmson(bmsonFile *BmsonFile) (nls []noteInLNBmson) {
 	laneNum := bmsonFile.Keymode + 2
 	soundNotes := make([][]soundNote, laneNum)
-	for _, soundChannel := range bmsonFile.Sound_channels {
-		for _, note := range soundChannel.Notes {
+	for ci, soundChannel := range bmsonFile.Sound_channels {
+		for ni, note := range soundChannel.Notes {
 			if x, ok := note.X.(float64); ok && x-math.Floor(x) == 0 && x > 0 && int(x) <= laneNum {
 				xInt := int(x)
-				soundNotes[xInt] = append(soundNotes[xInt], soundNote{fileName: soundChannel.Name, note: note})
+				soundNotes[xInt] = append(soundNotes[xInt], soundNote{
+					fileName: soundChannel.Name, channelIndex: ci, note: note, noteIndex: ni})
 			}
 		}
 	}
