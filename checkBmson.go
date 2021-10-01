@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/Shimi9999/checkbms/bmson"
+	"github.com/buger/jsonparser"
 )
 
 func (bmsonFile *BmsonFile) ScanBmsonFile() error {
@@ -65,9 +66,88 @@ func (bmsonFile *BmsonFile) ScanBmsonFile() error {
 		bmsonFile.TotalNotes = totalNotes
 	}()
 
+	bmsonFile.Logs.addResultLogs(CheckDuplicateField(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckAndDeleteOutOfLaneNotes(bmsonFile))
 
 	return nil
+}
+
+type duplicateField struct {
+	fieldName string
+	values    []string
+}
+
+func (d duplicateField) Log() Log {
+	log := Log{
+		Level:      Warning,
+		Message:    fmt.Sprintf("Duplicate field: %s * %d", d.fieldName, len(d.values)),
+		Message_ja: fmt.Sprintf("フィールドが重複しています: %s * %d", d.fieldName, len(d.values)),
+		SubLogs:    []string{},
+		SubLogType: Detail,
+	}
+	for _, value := range d.values {
+		if len(value) > 100 {
+			value = value[:96] + " ... " + value[len(value)-4:]
+		}
+		log.SubLogs = append(log.SubLogs, value)
+	}
+	return log
+}
+
+func CheckDuplicateField(bmsonFile *BmsonFile) (dfs []duplicateField) {
+	var doObjectEach func(data []byte, fieldName string)
+	var doArrayEach func(data []byte, fieldName string)
+
+	doObjectEach = func(data []byte, fieldName string) {
+		keyMap := map[string][]string{}
+		keyList := []string{}
+		jsonparser.ObjectEach(data, func(key []byte, value []byte, dataType jsonparser.ValueType, offset int) error {
+			keyStr := fieldName + "." + string(key)
+			if fieldName == "root" {
+				keyStr = string(key)
+			}
+			if len(keyMap[keyStr]) == 0 {
+				keyList = append(keyList, keyStr)
+			}
+			keyMap[keyStr] = append(keyMap[keyStr], string(value))
+
+			switch dataType {
+			case jsonparser.Array:
+				doArrayEach(value, keyStr)
+			case jsonparser.Object:
+				doObjectEach(value, keyStr)
+			}
+			return nil
+		})
+		for _, key := range keyList {
+			if len(keyMap[key]) >= 2 {
+				dfs = append(dfs, duplicateField{fieldName: key, values: keyMap[key]})
+			}
+		}
+	}
+
+	doArrayEach = func(data []byte, fieldName string) {
+		index := 0
+		jsonparser.ArrayEach(data, func(value []byte, dataType jsonparser.ValueType, offset int, err error) {
+			key := fmt.Sprintf("%s[%d]", fieldName, index)
+			index++
+
+			switch dataType {
+			case jsonparser.Array:
+				doArrayEach(value, key)
+			case jsonparser.Object:
+				doObjectEach(value, key)
+			}
+		})
+	}
+
+	doObjectEach(bmsonFile.FullText, "root")
+
+	// jsonと逆順になっているので反転させる
+	for i, j := 0, len(dfs)-1; i < j; i, j = i+1, j-1 {
+		dfs[i], dfs[j] = dfs[j], dfs[i]
+	}
+	return dfs
 }
 
 type outOfLaneNotes struct {

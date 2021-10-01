@@ -8,3 +8,9 @@ saintfish/chardet
 Copyright (c) 2012 chardet Authors
 Released under the ICU License
 https://github.com/saintfish/chardet/blob/master/LICENSE
+---------------------------------------------------------
+
+buger/jsonparser 
+Copyright (c) 2016 Leonid Bugaev
+Released under the MIT License
+https://opensource.org/licenses/mit-license.php
