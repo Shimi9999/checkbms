@@ -148,89 +148,11 @@ func (bmsonFile *BmsonFile) ScanBmsonFile() error {
 		bmsonFile.TotalNotes = totalNotes
 	}()
 
-	bmsonFile.Logs.addResultLogs(CheckDuplicateField(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckAndDeleteOutOfLaneNotes(bmsonFile))
 
 	return nil
 }
 
-type duplicateField struct {
-	fieldName string
-	values    []string
-}
-
-func (d duplicateField) Log() Log {
-	log := Log{
-		Level:      Warning,
-		Message:    fmt.Sprintf("Duplicate field: %s * %d", d.fieldName, len(d.values)),
-		Message_ja: fmt.Sprintf("フィールドが重複しています: %s * %d", d.fieldName, len(d.values)),
-		SubLogs:    []string{},
-		SubLogType: Detail,
-	}
-	for _, value := range d.values {
-		if len(value) > 100 {
-			value = value[:96] + " ... " + value[len(value)-4:]
-		}
-		log.SubLogs = append(log.SubLogs, value)
-	}
-	return log
-}
-
-func CheckDuplicateField(bmsonFile *BmsonFile) (dfs []duplicateField) {
-	var doObjectEach func(data []byte, fieldName string)
-	var doArrayEach func(data []byte, fieldName string)
-
-	doObjectEach = func(data []byte, fieldName string) {
-		keyMap := map[string][]string{}
-		keyList := []string{}
-		jsonparser.ObjectEach(data, func(key []byte, value []byte, dataType jsonparser.ValueType, offset int) error {
-			keyStr := fieldName + "." + string(key)
-			if fieldName == "root" {
-				keyStr = string(key)
-			}
-			if len(keyMap[keyStr]) == 0 {
-				keyList = append(keyList, keyStr)
-			}
-			keyMap[keyStr] = append(keyMap[keyStr], string(value))
-
-			switch dataType {
-			case jsonparser.Array:
-				doArrayEach(value, keyStr)
-			case jsonparser.Object:
-				doObjectEach(value, keyStr)
-			}
-			return nil
-		})
-		for _, key := range keyList {
-			if len(keyMap[key]) >= 2 {
-				dfs = append(dfs, duplicateField{fieldName: key, values: keyMap[key]})
-			}
-		}
-	}
-
-	doArrayEach = func(data []byte, fieldName string) {
-		index := 0
-		jsonparser.ArrayEach(data, func(value []byte, dataType jsonparser.ValueType, offset int, err error) {
-			key := fmt.Sprintf("%s[%d]", fieldName, index)
-			index++
-
-			switch dataType {
-			case jsonparser.Array:
-				doArrayEach(value, key)
-			case jsonparser.Object:
-				doObjectEach(value, key)
-			}
-		})
-	}
-
-	doObjectEach(bmsonFile.FullText, "root")
-
-	// jsonと逆順になっているので反転させる
-	for i, j := 0, len(dfs)-1; i < j; i, j = i+1, j-1 {
-		dfs[i], dfs[j] = dfs[j], dfs[i]
-	}
-	return dfs
-}
 
 type outOfLaneNotes struct {
 	soundNotes []soundNote
@@ -323,12 +245,31 @@ func (i invalidType) Log() Log {
 	}
 }
 
-func unmarshalBmson(bytes []byte) (*_Bmson, []invalidField, []invalidType, error) {
-	invalidFields := []invalidField{}
-	invalidTypes := []invalidType{}
+type duplicateField struct {
+	fieldName string
+	values    []string
+}
 
+func (d duplicateField) Log() Log {
+	log := Log{
+		Level:      Warning,
+		Message:    fmt.Sprintf("Duplicate field: %s * %d", d.fieldName, len(d.values)),
+		Message_ja: fmt.Sprintf("フィールドが重複しています: %s * %d", d.fieldName, len(d.values)),
+		SubLogs:    []string{},
+		SubLogType: Detail,
+	}
+	for _, value := range d.values {
+		if len(value) > 100 {
+			value = value[:96] + " ... " + value[len(value)-4:]
+		}
+		log.SubLogs = append(log.SubLogs, value)
+	}
+	return log
+}
+
+func unmarshalBmson(bytes []byte) (_bmson *_Bmson, ifs []invalidField, its []invalidType, dfs []duplicateField, _ error) {
 	invalidTypeLog := func(fieldName string, value []byte) {
-		invalidTypes = append(invalidTypes, invalidType{fieldName: fieldName, value: string(value)})
+		its = append(its, invalidType{fieldName: fieldName, value: string(value)})
 	}
 
 	var doObjectEach func(data []byte, bmsonType reflect.Type, fieldName string) reflect.Value
@@ -412,6 +353,8 @@ func unmarshalBmson(bytes []byte) (*_Bmson, []invalidField, []invalidType, error
 			return reflect.Value{}
 		}
 
+		keyMap := map[string][]string{}
+		keyList := []string{}
 		jsonparser.ObjectEach(data, func(key []byte, value []byte, dataType jsonparser.ValueType, offset int) error {
 			keyStr := fieldName + "." + string(key)
 
@@ -420,9 +363,15 @@ func unmarshalBmson(bytes []byte) (*_Bmson, []invalidField, []invalidType, error
 			field, ok := structVal.Type().FieldByName(fieldKey)
 			if !ok {
 				// 未定義フィールドエラー
-				invalidFields = append(invalidFields, invalidField{string(key), string(value), fieldName})
+				ifs = append(ifs, invalidField{string(key), string(value), fieldName})
 				return nil
 			}
+
+			if len(keyMap[keyStr]) == 0 {
+				keyList = append(keyList, keyStr)
+			}
+			keyMap[keyStr] = append(keyMap[keyStr], string(value))
+
 			if field.Type.Kind() == reflect.Ptr {
 				elemType := field.Type.Elem()
 				v := getValue(value, keyStr, dataType, elemType)
@@ -441,6 +390,12 @@ func unmarshalBmson(bytes []byte) (*_Bmson, []invalidField, []invalidType, error
 			}
 			return nil
 		})
+		for _, key := range keyList {
+			if len(keyMap[key]) >= 2 {
+				dfs = append(dfs, duplicateField{fieldName: key, values: keyMap[key]})
+			}
+		}
+
 		return structVal.Addr()
 	}
 
@@ -463,15 +418,19 @@ func unmarshalBmson(bytes []byte) (*_Bmson, []invalidField, []invalidType, error
 		return sliceVal
 	}
 
-	_bmson := &_Bmson{}
 	_, dataType, _, _ := jsonparser.Get(bytes, []string{}...)
 	b := getValue(bytes, "root", dataType, reflect.TypeOf(_bmson))
 	if !b.IsValid() {
-		return nil, nil, nil, fmt.Errorf("type of input json object is not bmson")
+		return nil, nil, nil, nil, fmt.Errorf("type of input json object is not bmson")
 	}
 	_bmson = b.Interface().(*_Bmson)
 
-	return _bmson, invalidFields, invalidTypes, nil
+	// jsonと逆順になっているので反転させる
+	for i, j := 0, len(dfs)-1; i < j; i, j = i+1, j-1 {
+		dfs[i], dfs[j] = dfs[j], dfs[i]
+	}
+
+	return _bmson, ifs, its, dfs, nil
 }
 
 type requiredNilValue struct {
@@ -582,13 +541,14 @@ func ScanBmson(bytes []byte) (bmsonData *bmson.Bmson, logs Logs, _ error) {
 
 	// bytesから*_Bmsonを読み込む
 	// 空の値はnilが入る
-	validateBmson, ifs, its, err := unmarshalBmson(bytes)
+	validateBmson, ifs, its, dfs, err := unmarshalBmson(bytes)
 	if err != nil {
 		invalidBmsonFormatLog(err)
 		return nil, logs, err
 	}
 	logs.addResultLog(ifs)
 	logs.addResultLog(its)
+	logs.addResultLog(dfs)
 
 	// *_Bmsonを*bmsonに変換する
 	// 変換前の値がnilの場合はゼロ値が入る
