@@ -15,6 +15,88 @@ import (
 	"github.com/buger/jsonparser"
 )
 
+type _Bmson struct {
+	Version        *string         `json:"version" validate:"required"`
+	Info           *_BmsonInfo     `json:"info" validate:"required"`
+	Lines          []_BarLine      `json:"lines"`
+	Bpm_events     []_BpmEvent     `json:"bpm_events"`
+	Stop_events    []_StopEvent    `json:"stop_events"`
+	Sound_channels []_SoundChannel `json:"sound_channels" validate:"required"`
+	Bga            *_BGA           `json:"bga"`
+	Scroll_events  []_ScrollEvent  `json:"scroll_events"` // beatoraja expansion
+}
+
+type _BmsonInfo struct {
+	Title          *string  `json:"title"`
+	Subtitle       *string  `json:"subtitle"`
+	Artist         *string  `json:"artist"`
+	Subartists     []string `json:"subartists"`
+	Genre          *string  `json:"genre"`
+	Mode_hint      *string  `json:"mode_hint"`
+	Chart_name     *string  `json:"chart_name"`
+	Level          *int     `json:"level"`
+	Init_bpm       *float64 `json:"init_bpm" validate:"required"`
+	Judge_rank     *float64 `json:"judge_rank"`
+	Total          *float64 `json:"total"`
+	Back_image     *string  `json:"back_image"`
+	Eyecatch_image *string  `json:"eyecatch_image"`
+	Title_image    *string  `json:"title_image"`
+	Banner_image   *string  `json:"banner_image"`
+	Preview_music  *string  `json:"preview_music"`
+	Resolution     *int     `json:"resolution"`
+	Ln_type        *int     `json:"ln_type"` // beatoraja expansion
+}
+
+type _BarLine struct {
+	Y *int `json:"y" validate:"required"`
+}
+
+type _SoundChannel struct {
+	Name  *string `json:"name" validate:"required"`
+	Notes []_Note `json:"notes" validate:"required"`
+}
+
+type _Note struct {
+	X  *interface{} `json:"x"`
+	Y  *int         `json:"y" validate:"required"`
+	L  *int         `json:"l"`
+	C  *bool        `json:"c" validate:"required"`
+	T  *int         `json:"t"`  // beatoraja expansion
+	Up *bool        `json:"up"` // beatoraja expansion
+}
+
+type _BpmEvent struct {
+	Y   *int     `json:"y" validate:"required"`
+	Bpm *float64 `json:"bpm" validate:"required"`
+}
+
+type _StopEvent struct {
+	Y        *int `json:"y" validate:"required"`
+	Duration *int `json:"duration" validate:"required"`
+}
+
+type _BGA struct {
+	Bga_header   []_BGAHeader `json:"bga_header"`
+	Bga_events   []_BGAEvent  `json:"bga_events"`
+	Layer_events []_BGAEvent  `json:"layer_events"`
+	Poor_events  []_BGAEvent  `json:"poor_events"`
+}
+
+type _BGAHeader struct {
+	Id   *int    `json:"id" validate:"required"`
+	Name *string `json:"name" validate:"required"`
+}
+
+type _BGAEvent struct {
+	Y  *int `json:"y" validate:"required"`
+	Id *int `json:"id" validate:"required"`
+}
+
+type _ScrollEvent struct { // beatoraja expansion
+	Y    *int     `json:"y" validate:"required"`
+	Rate *float64 `json:"rate" validate:"required"`
+}
+
 func (bmsonFile *BmsonFile) ScanBmsonFile() error {
 	if bmsonFile.FullText == nil {
 		return fmt.Errorf("FullText is empty: %s", bmsonFile.Path)
@@ -241,128 +323,277 @@ func (i invalidType) Log() Log {
 	}
 }
 
+func unmarshalBmson(bytes []byte) (*_Bmson, []invalidField, []invalidType, error) {
+	invalidFields := []invalidField{}
+	invalidTypes := []invalidType{}
+
+	invalidTypeLog := func(fieldName string, value []byte) {
+		invalidTypes = append(invalidTypes, invalidType{fieldName: fieldName, value: string(value)})
+	}
+
+	var doObjectEach func(data []byte, bmsonType reflect.Type, fieldName string) reflect.Value
+	var doArrayEach func(data []byte, bmsonType reflect.Type, fieldName string) reflect.Value
+
+	getValue := func(value []byte, fieldName string, dataType jsonparser.ValueType, bmsonType reflect.Type) reflect.Value {
+		expectedType := bmsonType
+		if bmsonType.Kind() == reflect.Ptr && bmsonType.Kind() != reflect.Slice {
+			expectedType = expectedType.Elem()
+		}
+
+		var returnValue reflect.Value
+		switch expectedType.Kind() {
+		case reflect.Struct:
+			if dataType == jsonparser.Object {
+				returnValue = doObjectEach(value, bmsonType, fieldName)
+			} else {
+				invalidTypeLog(fieldName, value)
+			}
+		case reflect.Slice:
+			if dataType == jsonparser.Array {
+				returnValue = doArrayEach(value, bmsonType, fieldName)
+			} else {
+				invalidTypeLog(fieldName, value)
+			}
+		case reflect.String:
+			if dataType == jsonparser.String {
+				str := string(value)
+				returnValue = reflect.ValueOf(&str)
+			} else {
+				invalidTypeLog(fieldName, value)
+			}
+		case reflect.Int:
+			if dataType == jsonparser.Number && !strings.Contains(string(value), ".") {
+				intNum, _ := strconv.Atoi(string(value))
+				returnValue = reflect.ValueOf(&intNum)
+			} else {
+				invalidTypeLog(fieldName, value)
+			}
+		case reflect.Float64:
+			if dataType == jsonparser.Number {
+				floatNum, _ := strconv.ParseFloat(string(value), 64)
+				returnValue = reflect.ValueOf(&floatNum)
+			} else {
+				invalidTypeLog(fieldName, value)
+			}
+		case reflect.Bool:
+			if dataType == jsonparser.Boolean {
+				b, _ := strconv.ParseBool(string(value))
+				returnValue = reflect.ValueOf(&b)
+			} else {
+				invalidTypeLog(fieldName, value)
+			}
+		case reflect.Interface:
+			var inter interface{}
+			switch dataType {
+			case jsonparser.Object:
+				inter = doObjectEach(value, bmsonType, fieldName).Elem().Interface()
+			case jsonparser.Array:
+				inter = doArrayEach(value, bmsonType, fieldName).Interface()
+			case jsonparser.String:
+				inter = string(value)
+			case jsonparser.Number:
+				inter, _ = strconv.ParseFloat(string(value), 64)
+			case jsonparser.Boolean:
+				inter, _ = strconv.ParseBool(string(value))
+			}
+			returnValue = reflect.ValueOf(&inter)
+		}
+
+		return returnValue
+	}
+
+	doObjectEach = func(data []byte, bmsonType reflect.Type, fieldName string) reflect.Value {
+		var structVal reflect.Value
+		if bmsonType.Kind() == reflect.Struct {
+			structVal = reflect.New(bmsonType).Elem()
+		} else if bmsonType.Kind() == reflect.Ptr && bmsonType.Elem().Kind() == reflect.Struct {
+			structVal = reflect.New(bmsonType.Elem()).Elem()
+		} else {
+			return reflect.Value{}
+		}
+
+		jsonparser.ObjectEach(data, func(key []byte, value []byte, dataType jsonparser.ValueType, offset int) error {
+			keyStr := fieldName + "." + string(key)
+
+			fieldKey := strings.ToUpper(string(key)[:1]) + string(key)[1:]
+			fieldVal := structVal.FieldByName(fieldKey)
+			field, ok := structVal.Type().FieldByName(fieldKey)
+			if !ok {
+				// 未定義フィールドエラー
+				invalidFields = append(invalidFields, invalidField{string(key), string(value), fieldName})
+				return nil
+			}
+			if field.Type.Kind() == reflect.Ptr {
+				elemType := field.Type.Elem()
+				v := getValue(value, keyStr, dataType, elemType)
+				if v.IsValid() {
+					fieldVal.Set(v)
+				}
+			} else {
+				v := getValue(value, keyStr, dataType, field.Type)
+				if v.IsValid() {
+					if v.Kind() == reflect.Slice {
+						fieldVal.Set(v)
+					} else {
+						fieldVal.Set(v.Elem())
+					}
+				}
+			}
+			return nil
+		})
+		return structVal.Addr()
+	}
+
+	doArrayEach = func(data []byte, bmsonType reflect.Type, fieldName string) reflect.Value {
+		var sliceVal reflect.Value
+		if bmsonType.Kind() == reflect.Slice {
+			sliceVal = reflect.MakeSlice(bmsonType, 0, 0)
+		} else if bmsonType.Kind() == reflect.Ptr && bmsonType.Elem().Kind() == reflect.Slice {
+			sliceVal = reflect.MakeSlice(bmsonType.Elem(), 0, 0)
+		} else {
+			return reflect.Value{}
+		}
+
+		index := 0
+		jsonparser.ArrayEach(data, func(value []byte, dataType jsonparser.ValueType, offset int, err error) {
+			key := fmt.Sprintf("%s[%d]", fieldName, index)
+			sliceVal = reflect.Append(sliceVal, getValue(value, key, dataType, bmsonType.Elem()).Elem())
+			index++
+		})
+		return sliceVal
+	}
+
+	_bmson := &_Bmson{}
+	_, dataType, _, _ := jsonparser.Get(bytes, []string{}...)
+	b := getValue(bytes, "root", dataType, reflect.TypeOf(_bmson))
+	if !b.IsValid() {
+		return nil, nil, nil, fmt.Errorf("type of input json object is not bmson")
+	}
+	_bmson = b.Interface().(*_Bmson)
+
+	return _bmson, invalidFields, invalidTypes, nil
+}
+
+type requiredNilValue struct {
+	fieldName string
+}
+
+func (v requiredNilValue) Log() Log {
+	return Log{
+		Level:      Error,
+		Message:    fmt.Sprintf("%s is required, but is none", v.fieldName),
+		Message_ja: fmt.Sprintf("%sは必須ですが、値がありません", v.fieldName),
+	}
+}
+
+func convertBmson(_bmson *_Bmson) (bmsonData *bmson.Bmson, rns []requiredNilValue) {
+	requiredButNil := func(fieldName string) {
+		rns = append(rns, requiredNilValue{fieldName: fieldName})
+	}
+
+	var convert func(sourceValue reflect.Value, targetType reflect.Type, fieldName string) reflect.Value
+	convert = func(sourceValue reflect.Value, targetType reflect.Type, fieldName string) reflect.Value {
+		if !sourceValue.IsValid() {
+			return reflect.Value{}
+		}
+
+		if sourceValue.Kind() == reflect.Ptr {
+			if sourceValue.IsNil() {
+				return reflect.Value{}
+			} else {
+				sourceValue = sourceValue.Elem()
+			}
+		}
+		if targetType.Kind() == reflect.Ptr {
+			targetType = targetType.Elem()
+		}
+
+		switch sourceValue.Kind() {
+		case reflect.Struct:
+			structVal := reflect.New(targetType).Elem()
+			for i := 0; i < sourceValue.NumField(); i++ {
+				fieldValue := sourceValue.Field(i)
+				fieldType := targetType.Field(i)
+				fullFieldName := fieldName + "." + strings.ToLower(fieldType.Name)
+				if fieldValue.IsValid() {
+					cv := convert(fieldValue, targetType.Field(i).Type, fullFieldName)
+					if cv.IsValid() {
+						if structVal.Field(i).Kind() == reflect.Ptr || structVal.Field(i).Kind() == reflect.Slice {
+							structVal.Field(i).Set(cv)
+						} else {
+							structVal.Field(i).Set(cv.Elem())
+						}
+
+						if cv.Kind() == reflect.Slice && cv.Len() == 0 &&
+							sourceValue.Type().Field(i).Tag.Get("validate") == "required" {
+							requiredButNil(fullFieldName)
+						}
+					} else {
+						// nil値
+						if sourceValue.Type().Field(i).Tag.Get("validate") == "required" {
+							requiredButNil(fullFieldName)
+						}
+					}
+				} else {
+					// 無効値?基本通ることは無い?
+				}
+			}
+			return structVal.Addr()
+		case reflect.Slice:
+			sliceVal := reflect.MakeSlice(targetType, 0, 0)
+			for i := 0; i < sourceValue.Len(); i++ {
+				cv := convert(sourceValue.Index(i), targetType.Elem(), fmt.Sprintf("%s[%d]", fieldName, i))
+				if targetType.Elem().Kind() == reflect.Ptr || targetType.Elem().Kind() == reflect.Slice {
+					sliceVal = reflect.Append(sliceVal, cv)
+				} else {
+					sliceVal = reflect.Append(sliceVal, cv.Elem())
+				}
+			}
+			return sliceVal
+		}
+		return sourceValue.Addr()
+	}
+
+	cv := convert(reflect.ValueOf(_bmson), reflect.TypeOf(bmson.Bmson{}), "root")
+	bmsonData = cv.Interface().(*bmson.Bmson)
+	if bmsonData.Info == nil {
+		bmsonData.Info = &bmson.BmsonInfo{
+			Mode_hint: "beat-7k",
+		}
+	}
+	return bmsonData, rns
+}
+
 func ScanBmson(bytes []byte) (bmsonData *bmson.Bmson, logs Logs, _ error) {
-	var bmsonObj interface{}
-	if err := json.Unmarshal(bytes, &bmsonObj); err != nil {
+	invalidBmsonFormatLog := func(err error) {
 		logs = append(logs, Log{
 			Level:      Error,
 			Message:    fmt.Sprintf("Invalid bmson format: %s", err.Error()),
 			Message_ja: fmt.Sprintf("bmsonのフォーマットが無効です: %s", err.Error()),
 		})
-		for _, log := range logs {
-			fmt.Println(log.String())
-		}
+	}
+
+	// jsonフォーマットチェック
+	var bmsonObj interface{}
+	if err := json.Unmarshal(bytes, &bmsonObj); err != nil {
+		invalidBmsonFormatLog(err)
 		return nil, logs, err
 	}
 
-	ifs := []invalidField{}
-	its := []invalidType{}
-
-	// bmsonのフォーマットチェックをしながら、bmsonデータを読み込む
-	// TODO unmershallのときにmapにまとめられてしまうので、キーの重複が検知できない
-	var load func(jsonObj interface{}, dataType reflect.Type, keyName string) reflect.Value
-	load = func(jsonObj interface{}, dataType reflect.Type, keyName string) reflect.Value {
-		if dataType.Kind() == reflect.Invalid {
-			return reflect.Value{}
-		}
-
-		isPtr := false
-		if dataType.Kind() == reflect.Ptr {
-			dataType = dataType.Elem()
-			isPtr = true
-		}
-
-		switch dataType.Kind() {
-		case reflect.Struct:
-			if mapVals, isMap := jsonObj.(map[string]interface{}); isMap {
-				structData := reflect.New(dataType).Elem()
-				dataType := structData.Type()
-				for key, val := range mapVals {
-					match := false
-					for i := 0; i < dataType.NumField(); i++ {
-						fieldName := strings.ToLower(dataType.Field(i).Name)
-						if key == fieldName {
-							match = true
-							loadedValue := load(val, dataType.Field(i).Type, fmt.Sprintf("%s.%s", keyName, key))
-							if loadedValue.Kind() == reflect.Ptr && dataType.Field(i).Type.Kind() != reflect.Ptr {
-								loadedValue = loadedValue.Elem()
-							}
-							structData.Field(i).Set(loadedValue)
-							break
-						}
-					}
-					if !match {
-						ifs = append(ifs, invalidField{key, val, keyName})
-					}
-				}
-				if isPtr && structData.Kind() != reflect.Ptr {
-					return structData.Addr()
-				}
-				return structData
-			} else {
-				its = append(its, invalidType{keyName, jsonObj})
-			}
-		case reflect.Slice:
-			if sliceVals, isSlice := jsonObj.([]interface{}); isSlice {
-				sliceData := reflect.MakeSlice(dataType, len(sliceVals), len(sliceVals))
-				for i, val := range sliceVals {
-					loadedValue := load(val, dataType.Elem(), fmt.Sprintf("%s[%d]", keyName, i))
-					if loadedValue.Kind() == reflect.Ptr && dataType.Elem().Kind() != reflect.Ptr {
-						sliceData.Index(i).Set(loadedValue.Elem())
-					} else {
-						sliceData.Index(i).Set(loadedValue)
-					}
-				}
-				if isPtr && sliceData.Kind() != reflect.Ptr {
-					return sliceData.Addr()
-				}
-				return sliceData
-			} else {
-				its = append(its, invalidType{keyName, jsonObj})
-			}
-		case reflect.String:
-			if val, ok := jsonObj.(string); ok {
-				return reflect.ValueOf(&val)
-			} else {
-				its = append(its, invalidType{keyName, jsonObj})
-			}
-		case reflect.Int:
-			if val, ok := jsonObj.(float64); ok {
-				if val-math.Floor(val) != 0 {
-					its = append(its, invalidType{keyName, jsonObj})
-				}
-				iVal := int(val)
-				return reflect.ValueOf(&iVal)
-			} else {
-				its = append(its, invalidType{keyName, jsonObj})
-			}
-		case reflect.Float64:
-			if val, ok := jsonObj.(float64); ok {
-				return reflect.ValueOf(&val)
-			} else {
-				its = append(its, invalidType{keyName, jsonObj})
-			}
-		case reflect.Bool:
-			if val, ok := jsonObj.(bool); ok {
-				return reflect.ValueOf(&val)
-			} else {
-				its = append(its, invalidType{keyName, jsonObj})
-			}
-		case reflect.Interface:
-			return reflect.ValueOf(&jsonObj)
-		}
-
-		return reflect.Value{}
+	// bytesから*_Bmsonを読み込む
+	// 空の値はnilが入る
+	validateBmson, ifs, its, err := unmarshalBmson(bytes)
+	if err != nil {
+		invalidBmsonFormatLog(err)
+		return nil, logs, err
 	}
+	logs.addResultLog(ifs)
+	logs.addResultLog(its)
 
-	bmsonData = load(bmsonObj, reflect.TypeOf(bmsonData), "root").Interface().(*bmson.Bmson)
-
-	for _, _if := range ifs {
-		logs = append(logs, _if.Log())
-	}
-	for _, it := range its {
-		logs = append(logs, it.Log())
-	}
+	// *_Bmsonを*bmsonに変換する
+	// 変換前の値がnilの場合はゼロ値が入る
+	bmsonData, rns := convertBmson(validateBmson)
+	logs.addResultLog(rns)
 
 	return bmsonData, logs, nil
 }
