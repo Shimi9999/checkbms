@@ -15,88 +15,6 @@ import (
 	"github.com/buger/jsonparser"
 )
 
-type _Bmson struct {
-	Version        *string         `json:"version" validate:"required"`
-	Info           *_BmsonInfo     `json:"info" validate:"required"`
-	Lines          []_BarLine      `json:"lines"`
-	Bpm_events     []_BpmEvent     `json:"bpm_events"`
-	Stop_events    []_StopEvent    `json:"stop_events"`
-	Sound_channels []_SoundChannel `json:"sound_channels" validate:"required"`
-	Bga            *_BGA           `json:"bga"`
-	Scroll_events  []_ScrollEvent  `json:"scroll_events"` // beatoraja expansion
-}
-
-type _BmsonInfo struct {
-	Title          *string  `json:"title"`
-	Subtitle       *string  `json:"subtitle"`
-	Artist         *string  `json:"artist"`
-	Subartists     []string `json:"subartists"`
-	Genre          *string  `json:"genre"`
-	Mode_hint      *string  `json:"mode_hint"`
-	Chart_name     *string  `json:"chart_name"`
-	Level          *int     `json:"level"`
-	Init_bpm       *float64 `json:"init_bpm" validate:"required"`
-	Judge_rank     *float64 `json:"judge_rank"`
-	Total          *float64 `json:"total"`
-	Back_image     *string  `json:"back_image"`
-	Eyecatch_image *string  `json:"eyecatch_image"`
-	Title_image    *string  `json:"title_image"`
-	Banner_image   *string  `json:"banner_image"`
-	Preview_music  *string  `json:"preview_music"`
-	Resolution     *int     `json:"resolution"`
-	Ln_type        *int     `json:"ln_type"` // beatoraja expansion
-}
-
-type _BarLine struct {
-	Y *int `json:"y" validate:"required"`
-}
-
-type _SoundChannel struct {
-	Name  *string `json:"name" validate:"required"`
-	Notes []_Note `json:"notes" validate:"required"`
-}
-
-type _Note struct {
-	X  *interface{} `json:"x"`
-	Y  *int         `json:"y" validate:"required"`
-	L  *int         `json:"l"`
-	C  *bool        `json:"c" validate:"required"`
-	T  *int         `json:"t"`  // beatoraja expansion
-	Up *bool        `json:"up"` // beatoraja expansion
-}
-
-type _BpmEvent struct {
-	Y   *int     `json:"y" validate:"required"`
-	Bpm *float64 `json:"bpm" validate:"required"`
-}
-
-type _StopEvent struct {
-	Y        *int `json:"y" validate:"required"`
-	Duration *int `json:"duration" validate:"required"`
-}
-
-type _BGA struct {
-	Bga_header   []_BGAHeader `json:"bga_header"`
-	Bga_events   []_BGAEvent  `json:"bga_events"`
-	Layer_events []_BGAEvent  `json:"layer_events"`
-	Poor_events  []_BGAEvent  `json:"poor_events"`
-}
-
-type _BGAHeader struct {
-	Id   *int    `json:"id" validate:"required"`
-	Name *string `json:"name" validate:"required"`
-}
-
-type _BGAEvent struct {
-	Y  *int `json:"y" validate:"required"`
-	Id *int `json:"id" validate:"required"`
-}
-
-type _ScrollEvent struct { // beatoraja expansion
-	Y    *int     `json:"y" validate:"required"`
-	Rate *float64 `json:"rate" validate:"required"`
-}
-
 func (bmsonFile *BmsonFile) ScanBmsonFile() error {
 	if bmsonFile.FullText == nil {
 		return fmt.Errorf("FullText is empty: %s", bmsonFile.Path)
@@ -267,7 +185,31 @@ func (d duplicateField) Log() Log {
 	return log
 }
 
-func unmarshalBmson(bytes []byte) (_bmson *_Bmson, ifs []invalidField, its []invalidType, dfs []duplicateField, _ error) {
+// bmson.Bmsonのnil値検証用構造体型を作る
+// フィールドのスライス型以外の全ての型をポインタ化する
+func makeValidationStruct(srcType reflect.Type) reflect.Type {
+	fields := []reflect.StructField{}
+	for i := 0; i < srcType.NumField(); i++ {
+		srcField := srcType.Field(i)
+		var newType reflect.Type
+		if srcField.Type.Kind() == reflect.Ptr && srcField.Type.Elem().Kind() == reflect.Struct {
+			newType = reflect.PtrTo(makeValidationStruct(srcField.Type.Elem()))
+		} else if srcField.Type.Kind() == reflect.Slice {
+			if srcField.Type.Elem().Kind() == reflect.Struct {
+				newType = reflect.SliceOf(makeValidationStruct(srcField.Type.Elem()))
+			} else {
+				newType = reflect.SliceOf(srcField.Type.Elem())
+			}
+		} else {
+			newType = reflect.PtrTo(srcField.Type)
+		}
+		fields = append(fields, reflect.StructField{Name: srcField.Name, Type: newType, Tag: srcField.Tag})
+	}
+	t := reflect.StructOf(fields)
+	return t
+}
+
+func unmarshalBmson(bytes []byte) (validationBmson interface{}, ifs []invalidField, its []invalidType, dfs []duplicateField, _ error) {
 	invalidTypeLog := func(fieldName string, value []byte) {
 		its = append(its, invalidType{fieldName: fieldName, value: string(value)})
 	}
@@ -418,19 +360,20 @@ func unmarshalBmson(bytes []byte) (_bmson *_Bmson, ifs []invalidField, its []inv
 		return sliceVal
 	}
 
+	validationStruct := makeValidationStruct(reflect.TypeOf(bmson.Bmson{}))
 	_, dataType, _, _ := jsonparser.Get(bytes, []string{}...)
-	b := getValue(bytes, "root", dataType, reflect.TypeOf(_bmson))
+	b := getValue(bytes, "root", dataType, reflect.PtrTo(validationStruct))
 	if !b.IsValid() {
 		return nil, nil, nil, nil, fmt.Errorf("type of input json object is not bmson")
 	}
-	_bmson = b.Interface().(*_Bmson)
+	validationBmson = b.Interface()
 
 	// jsonと逆順になっているので反転させる
 	for i, j := 0, len(dfs)-1; i < j; i, j = i+1, j-1 {
 		dfs[i], dfs[j] = dfs[j], dfs[i]
 	}
 
-	return _bmson, ifs, its, dfs, nil
+	return validationBmson, ifs, its, dfs, nil
 }
 
 type requiredNilValue struct {
@@ -445,7 +388,7 @@ func (v requiredNilValue) Log() Log {
 	}
 }
 
-func convertBmson(_bmson *_Bmson) (bmsonData *bmson.Bmson, rns []requiredNilValue) {
+func convertBmson(_bmson interface{}) (bmsonData *bmson.Bmson, rns []requiredNilValue) {
 	requiredButNil := func(fieldName string) {
 		rns = append(rns, requiredNilValue{fieldName: fieldName})
 	}
@@ -484,12 +427,12 @@ func convertBmson(_bmson *_Bmson) (bmsonData *bmson.Bmson, rns []requiredNilValu
 						}
 
 						if cv.Kind() == reflect.Slice && cv.Len() == 0 &&
-							sourceValue.Type().Field(i).Tag.Get("validate") == "required" {
+							fieldType.Tag.Get("validate") == "required" {
 							requiredButNil(fullFieldName)
 						}
 					} else {
 						// nil値
-						if sourceValue.Type().Field(i).Tag.Get("validate") == "required" {
+						if fieldType.Tag.Get("validate") == "required" {
 							requiredButNil(fullFieldName)
 						}
 					}
@@ -539,20 +482,18 @@ func ScanBmson(bytes []byte) (bmsonData *bmson.Bmson, logs Logs, _ error) {
 		return nil, logs, err
 	}
 
-	// bytesから*_Bmsonを読み込む
+	// bytesからValidationBmsonを読み込む
 	// 空の値はnilが入る
-	validateBmson, ifs, its, dfs, err := unmarshalBmson(bytes)
+	validationBmson, ifs, its, dfs, err := unmarshalBmson(bytes)
 	if err != nil {
 		invalidBmsonFormatLog(err)
 		return nil, logs, err
 	}
-	logs.addResultLog(ifs)
-	logs.addResultLog(its)
-	logs.addResultLog(dfs)
+	logs.addResultLogs(ifs, its, dfs)
 
-	// *_Bmsonを*bmsonに変換する
+	// ValidationBmsonをBmsonに変換する
 	// 変換前の値がnilの場合はゼロ値が入る
-	bmsonData, rns := convertBmson(validateBmson)
+	bmsonData, rns := convertBmson(validationBmson)
 	logs.addResultLog(rns)
 
 	return bmsonData, logs, nil
