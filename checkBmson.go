@@ -39,7 +39,6 @@ func (bmsonFile *BmsonFile) ScanBmsonFile() error {
 				bmsonFile.Keymode = keymode
 			} else {
 				// デフォルトはbeat-7k
-				// TODO 未指定ならエラーログを出すべき？
 				bmsonFile.Keymode = 7
 			}
 		}
@@ -69,22 +68,22 @@ func (bmsonFile *BmsonFile) ScanBmsonFile() error {
 	return nil
 }
 
-
 type invalidField struct {
 	fieldName    string
 	value        interface{}
+	isString     bool
 	locationName string
 }
 
 func (i invalidField) Log() Log {
 	val := i.value
-	if str, isString := val.(string); isString {
+	if str, ok := val.(string); ok && i.isString {
 		val = fmt.Sprintf("\"%s\"", str)
 	}
 	return Log{
 		Level:      Warning,
-		Message:    fmt.Sprintf("Invalid field name: {\"%s\": %v} in %s", i.fieldName, val, i.locationName),
-		Message_ja: fmt.Sprintf("無効なフィールド名です: {\"%s\": %v} in %s", i.fieldName, val, i.locationName),
+		Message:    fmt.Sprintf("Invalid field name: {\"%s\":%v} in %s", i.fieldName, val, i.locationName),
+		Message_ja: fmt.Sprintf("無効なフィールド名です: {\"%s\":%v} in %s", i.fieldName, val, i.locationName),
 	}
 }
 
@@ -115,11 +114,17 @@ func (d duplicateField) Log() Log {
 		SubLogs:    []string{},
 		SubLogType: Detail,
 	}
+	fieldName := d.fieldName
+	matches := regexp.MustCompile(`([^\.]+)$`).FindAllString(d.fieldName, -1)
+	if len(matches) > 0 {
+		fieldName = matches[0]
+	}
 	for _, value := range d.values {
-		if len(value) > 100 {
-			value = value[:96] + " ... " + value[len(value)-4:]
+		maxLen := 94
+		if len(value) > maxLen {
+			value = value[:maxLen-4] + " ... " + value[len(value)-4:]
 		}
-		log.SubLogs = append(log.SubLogs, value)
+		log.SubLogs = append(log.SubLogs, fmt.Sprintf("%s: %s", fieldName, value))
 	}
 	return log
 }
@@ -247,7 +252,8 @@ func unmarshalBmson(bytes []byte) (validationBmson interface{}, ifs []invalidFie
 			field, ok := structVal.Type().FieldByName(fieldKey)
 			if !ok {
 				// 未定義フィールドエラー
-				ifs = append(ifs, invalidField{string(key), string(value), fieldName})
+				ifs = append(ifs, invalidField{
+					fieldName: string(key), value: string(value), locationName: fieldName, isString: dataType == jsonparser.String})
 				return nil
 			}
 
@@ -330,8 +336,8 @@ func (v nilValue) Log() Log {
 		Message_ja: fmt.Sprintf("%sに値がありません", v.fieldName),
 	}
 	if v.level == Error {
-		log.Message = fmt.Sprintf("%s is required, but has no value", v.fieldName)
-		log.Message_ja = fmt.Sprintf("%sは必須ですが、値がありません", v.fieldName)
+		log.Message = fmt.Sprintf("%s value is required, but has no value", v.fieldName)
+		log.Message_ja = fmt.Sprintf("%sの値は必須ですが、値がありません", v.fieldName)
 	}
 	return log
 }
@@ -348,8 +354,8 @@ func (v emptyValue) Log() Log {
 		Message_ja: fmt.Sprintf("%sの値が空です", v.fieldName),
 	}
 	if v.level == Error {
-		log.Message = fmt.Sprintf("%s is required, but empty", v.fieldName)
-		log.Message_ja = fmt.Sprintf("%sは必須ですが、値が空です", v.fieldName)
+		log.Message = fmt.Sprintf("%s value is required, but empty", v.fieldName)
+		log.Message_ja = fmt.Sprintf("%sの値は必須ですが、値が空です", v.fieldName)
 	}
 	return log
 }
@@ -367,7 +373,7 @@ func (v outOfRangeValue) Log() Log {
 	}
 }
 
-func convertBmson(_bmson interface{}) (bmsonData *bmson.Bmson, rns []nilValue, evs []emptyValue, ovs []outOfRangeValue) {
+func convertBmson(_bmson interface{}) (bmsonData *bmson.Bmson, nvs []nilValue, evs []emptyValue, ovs []outOfRangeValue) {
 	getFieldDefaultValue := func(ruleKey string) reflect.Value {
 		if rule, ok := structRules[ruleKey]; ok {
 			defaultValue := rule.defaultValue
@@ -449,7 +455,7 @@ func convertBmson(_bmson interface{}) (bmsonData *bmson.Bmson, rns []nilValue, e
 						// nil値
 						switch targetStructField.Tag.Get("necessity") {
 						case "necessary":
-							rns = append(rns, nilValue{fieldName: fullFieldName, level: Error})
+							nvs = append(nvs, nilValue{fieldName: fullFieldName, level: Error})
 
 							// 必須の構造体ポインタ型が空の場合は初期化する
 							if targetStructField.Type.Kind() == reflect.Ptr && targetStructField.Type.Elem().Kind() == reflect.Struct {
@@ -464,7 +470,7 @@ func convertBmson(_bmson interface{}) (bmsonData *bmson.Bmson, rns []nilValue, e
 								structVal.Field(i).Set(newStruct.Addr())
 							}
 						case "semi-necessary":
-							rns = append(rns, nilValue{fieldName: fullFieldName, level: Warning})
+							nvs = append(nvs, nilValue{fieldName: fullFieldName, level: Warning})
 						}
 
 						// 初期値をセット
@@ -495,7 +501,7 @@ func convertBmson(_bmson interface{}) (bmsonData *bmson.Bmson, rns []nilValue, e
 	cv := convert(reflect.ValueOf(_bmson), reflect.TypeOf(bmson.Bmson{}), "root")
 	bmsonData = cv.Interface().(*bmson.Bmson)
 
-	return bmsonData, rns, evs, ovs
+	return bmsonData, nvs, evs, ovs
 }
 
 type structRule struct {
@@ -604,17 +610,17 @@ func ScanBmson(bytes []byte) (bmsonData *bmson.Bmson, logs Logs, _ error) {
 
 	// bytesからValidationBmsonを読み込む
 	// 空の値はnilが入る
-	validationBmson, ifs, its, dfs, err := unmarshalBmson(bytes)
+	validationBmson, invalidFields, invalidTypes, duplicateFields, err := unmarshalBmson(bytes)
 	if err != nil {
 		invalidBmsonFormatLog(err)
 		return nil, logs, err
 	}
-	logs.addResultLogs(ifs, its, dfs)
 
 	// ValidationBmsonをBmsonに変換する
 	// 変換前の値がnilの場合はゼロ値が入る
-	bmsonData, rns, evs, ovs := convertBmson(validationBmson)
-	logs.addResultLogs(rns, evs, ovs)
+	bmsonData, nilValues, emptyValues, outOfRangeValues := convertBmson(validationBmson)
+
+	logs.addResultLogs(invalidFields, duplicateFields, nilValues, emptyValues, invalidTypes, outOfRangeValues)
 
 	return bmsonData, logs, nil
 }
@@ -670,22 +676,22 @@ func CheckBmsonInfo(bmsonFile *BmsonFile) (logs Logs) {
 			if total < 100 {
 				logs = append(logs, Log{
 					Level:      Warning,
-					Message:    fmt.Sprintf("Real total value is under 100: Real:%.2f Defined:%s", total, formatFloat(bmsonTotal)),
-					Message_ja: fmt.Sprintf("実際のTotal値が100未満です: 実際:%.2f 定義:%s", total, formatFloat(bmsonTotal)),
+					Message:    fmt.Sprintf("Real total value is under 100: Defined:%s Real:%.2f", formatFloat(bmsonTotal), total),
+					Message_ja: fmt.Sprintf("実際のTotal値が100未満です: 定義:%s 実際:%.2f ", formatFloat(bmsonTotal), total),
 				})
 			} else if bmsonFile.TotalNotes > 0 {
 				totalJudge := JudgeOverTotal(total, bmsonFile.TotalNotes, bmsonFile.Keymode)
 				if totalJudge > 0 {
 					logs = append(logs, Log{
 						Level:      Notice,
-						Message:    fmt.Sprintf("info.total is very high(TotalNotes=%d): Real:%.2f Defined:%s", bmsonFile.TotalNotes, total, formatFloat(bmsonTotal)),
-						Message_ja: fmt.Sprintf("info.totalがかなり高いです(トータルノーツ=%d): 実際:%.2f 定義:%s", bmsonFile.TotalNotes, total, formatFloat(bmsonTotal)),
+						Message:    fmt.Sprintf("info.total is very high(TotalNotes=%d): Defined:%s Real:%.2f", bmsonFile.TotalNotes, formatFloat(bmsonTotal), total),
+						Message_ja: fmt.Sprintf("info.totalがかなり高いです(トータルノーツ=%d): 定義:%s 実際:%.2f", bmsonFile.TotalNotes, formatFloat(bmsonTotal), total),
 					})
 				} else if totalJudge < 0 {
 					logs = append(logs, Log{
 						Level:      Notice,
-						Message:    fmt.Sprintf("info.total is very low(TotalNotes=%d): Real:%.2f Defined:%s", bmsonFile.TotalNotes, total, formatFloat(bmsonTotal)),
-						Message_ja: fmt.Sprintf("info.totalがかなり低いです(トータルノーツ=%d): 実際:%.2f 定義:%s", bmsonFile.TotalNotes, total, formatFloat(bmsonTotal)),
+						Message:    fmt.Sprintf("info.total is very low(TotalNotes=%d): Defined:%s Real:%.2f", bmsonFile.TotalNotes, formatFloat(bmsonTotal), total),
+						Message_ja: fmt.Sprintf("info.totalがかなり低いです(トータルノーツ=%d): 定義:%s 実際:%.2f", bmsonFile.TotalNotes, formatFloat(bmsonTotal), total),
 					})
 				}
 			}
