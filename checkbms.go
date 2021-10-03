@@ -803,7 +803,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 				}
 				return true
 			}
-			bmsDir.Logs.addResultLogs(CheckWithoutKeysound(&bmsDir.BmsFiles[i], wavFileIsExist))
+			bmsDir.BmsFiles[i].Logs.addResultLogs(CheckWithoutKeysound(&bmsDir.BmsFiles[i], wavFileIsExist))
 		}
 	}
 
@@ -836,7 +836,7 @@ func CheckBmsDirectory(bmsDir *Directory, doDiffCheck bool) {
 				}
 				return true
 			}
-			bmsDir.Logs.addResultLogs(CheckWithoutKeysoundBmson(&bmsDir.BmsonFiles[i], wavFileIsExist))
+			bmsDir.BmsonFiles[i].Logs.addResultLogs(CheckWithoutKeysoundBmson(&bmsDir.BmsonFiles[i], wavFileIsExist))
 		}
 	}
 

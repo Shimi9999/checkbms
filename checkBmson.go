@@ -239,7 +239,10 @@ func unmarshalBmson(bytes []byte) (validationBmson interface{}, ifs []invalidFie
 		jsonparser.ObjectEach(data, func(key []byte, value []byte, dataType jsonparser.ValueType, offset int) error {
 			keyStr := fieldName + "." + string(key)
 
-			fieldKey := strings.ToUpper(string(key)[:1]) + string(key)[1:]
+			fieldKey := string(key)
+			if len(fieldKey) > 0 {
+				fieldKey = strings.ToUpper(fieldKey[:1]) + fieldKey[1:]
+			}
 			fieldVal := structVal.FieldByName(fieldKey)
 			field, ok := structVal.Type().FieldByName(fieldKey)
 			if !ok {
