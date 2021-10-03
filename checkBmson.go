@@ -87,6 +87,13 @@ func (i invalidField) Log() Log {
 	}
 }
 
+func removeRootFromFieldName(fieldName string) string {
+	if strings.HasPrefix(fieldName, "root.") {
+		return fieldName[5:]
+	}
+	return fieldName
+}
+
 // 型エラー 想定する型と実際の型も表示する？
 type invalidType struct {
 	fieldName string
@@ -94,10 +101,11 @@ type invalidType struct {
 }
 
 func (i invalidType) Log() Log {
+	fieldName := removeRootFromFieldName(i.fieldName)
 	return Log{
 		Level:      Error,
-		Message:    fmt.Sprintf("%s has invalid value (type error): %v", i.fieldName, i.value),
-		Message_ja: fmt.Sprintf("%sが無効な値です (型エラー): %v", i.fieldName, i.value),
+		Message:    fmt.Sprintf("%s has invalid value (type error): %v", fieldName, i.value),
+		Message_ja: fmt.Sprintf("%sが無効な値です (型エラー): %v", fieldName, i.value),
 	}
 }
 
@@ -107,24 +115,25 @@ type duplicateField struct {
 }
 
 func (d duplicateField) Log() Log {
+	fieldName := removeRootFromFieldName(d.fieldName)
 	log := Log{
 		Level:      Warning,
-		Message:    fmt.Sprintf("Duplicate field: %s * %d", d.fieldName, len(d.values)),
-		Message_ja: fmt.Sprintf("フィールドが重複しています: %s * %d", d.fieldName, len(d.values)),
+		Message:    fmt.Sprintf("Duplicate field: %s * %d", fieldName, len(d.values)),
+		Message_ja: fmt.Sprintf("フィールドが重複しています: %s * %d", fieldName, len(d.values)),
 		SubLogs:    []string{},
 		SubLogType: Detail,
 	}
-	fieldName := d.fieldName
+	lastFieldName := d.fieldName
 	matches := regexp.MustCompile(`([^\.]+)$`).FindAllString(d.fieldName, -1)
 	if len(matches) > 0 {
-		fieldName = matches[0]
+		lastFieldName = matches[0]
 	}
 	for _, value := range d.values {
 		maxLen := 94
 		if len(value) > maxLen {
 			value = value[:maxLen-4] + " ... " + value[len(value)-4:]
 		}
-		log.SubLogs = append(log.SubLogs, fmt.Sprintf("%s: %s", fieldName, value))
+		log.SubLogs = append(log.SubLogs, fmt.Sprintf("%s: %s", lastFieldName, value))
 	}
 	return log
 }
@@ -330,14 +339,15 @@ type nilValue struct {
 }
 
 func (v nilValue) Log() Log {
+	fieldName := removeRootFromFieldName(v.fieldName)
 	log := Log{
 		Level:      v.level,
-		Message:    fmt.Sprintf("%s has no value", v.fieldName),
-		Message_ja: fmt.Sprintf("%sに値がありません", v.fieldName),
+		Message:    fmt.Sprintf("%s has no value", fieldName),
+		Message_ja: fmt.Sprintf("%sに値がありません", fieldName),
 	}
 	if v.level == Error {
-		log.Message = fmt.Sprintf("%s value is required, but has no value", v.fieldName)
-		log.Message_ja = fmt.Sprintf("%sの値は必須ですが、値がありません", v.fieldName)
+		log.Message = fmt.Sprintf("%s value is required, but has no value", fieldName)
+		log.Message_ja = fmt.Sprintf("%sの値は必須ですが、値がありません", fieldName)
 	}
 	return log
 }
@@ -348,14 +358,15 @@ type emptyValue struct {
 }
 
 func (v emptyValue) Log() Log {
+	fieldName := removeRootFromFieldName(v.fieldName)
 	log := Log{
 		Level:      v.level,
-		Message:    fmt.Sprintf("%s value is empty", v.fieldName),
-		Message_ja: fmt.Sprintf("%sの値が空です", v.fieldName),
+		Message:    fmt.Sprintf("%s value is empty", fieldName),
+		Message_ja: fmt.Sprintf("%sの値が空です", fieldName),
 	}
 	if v.level == Error {
-		log.Message = fmt.Sprintf("%s value is required, but empty", v.fieldName)
-		log.Message_ja = fmt.Sprintf("%sの値は必須ですが、値が空です", v.fieldName)
+		log.Message = fmt.Sprintf("%s value is required, but empty", fieldName)
+		log.Message_ja = fmt.Sprintf("%sの値は必須ですが、値が空です", fieldName)
 	}
 	return log
 }
@@ -366,10 +377,11 @@ type outOfRangeValue struct {
 }
 
 func (v outOfRangeValue) Log() Log {
+	fieldName := removeRootFromFieldName(v.fieldName)
 	return Log{
 		Level:      Error,
-		Message:    fmt.Sprintf("%s has invalid value (out of range): %v", v.fieldName, v.value),
-		Message_ja: fmt.Sprintf("%sが無効な値です (定義範囲外): %v", v.fieldName, v.value),
+		Message:    fmt.Sprintf("%s has invalid value (out of range): %v", fieldName, v.value),
+		Message_ja: fmt.Sprintf("%sが無効な値です (定義範囲外): %v", fieldName, v.value),
 	}
 }
 
