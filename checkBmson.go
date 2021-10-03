@@ -627,11 +627,11 @@ func CheckBmsonFile(bmsonFile *BmsonFile) {
 	bmsonFile.Logs.addResultLogs(CheckNonNotesSoundChannel(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckNoWavSoundChannels(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckTotalnotesIsZero(&bmsonFile.BmsFileBase))
-	bmsonFile.Logs.addResultLogs(CheckSoundNotesIn0thMeasure(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckPlacedUndefiedBgaIds(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckDefinedUnplacedBgaHeader(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckBgaHeaderIdIsDuplicate(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckDuplicateY(bmsonFile))
+	bmsonFile.Logs.addResultLogs(CheckSoundNotesIn0thMeasure(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckOutOfLaneNotes(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckNoteInLNBmson(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckWithoutKeysoundBmson(bmsonFile, nil))
@@ -689,6 +689,11 @@ func CheckBmsonInfo(bmsonFile *BmsonFile) (logs Logs) {
 	}
 
 	return logs
+}
+
+// 小数点以下の無駄な0を消去して整える
+func formatFloat(f float64) string {
+	return strconv.FormatFloat(f, 'f', -1, 64)
 }
 
 type titleTextsAreDuplicate struct {
@@ -792,58 +797,6 @@ func CheckNoWavSoundChannels(bmsonFile *BmsonFile) (nw *noWavSoundChannels) {
 		nw = &noWavSoundChannels{noWavSoundChannels: noWavs}
 	}
 	return nw
-}
-
-type soundNote struct {
-	fileName     string
-	channelIndex int
-	note         bmson.Note
-	noteIndex    int
-}
-
-func (n soundNote) string() string {
-	return fmt.Sprintf("sound_channels[%d](%s)[%d] {x:%v, y:%d}", n.channelIndex, n.fileName, n.noteIndex, n.note.X, n.note.Y)
-}
-
-type soundNotesIn0thMeasure struct {
-	soundNotes []soundNote
-}
-
-func (sn soundNotesIn0thMeasure) Log() Log {
-	log := Log{
-		Level:      Warning,
-		Message:    "Note exists in 0th measure",
-		Message_ja: "0小節目にノーツが配置されています",
-		SubLogs:    []string{},
-		SubLogType: List,
-	}
-	for _, soundNote := range sn.soundNotes {
-		log.SubLogs = append(log.SubLogs, soundNote.string())
-	}
-	return log
-}
-
-func CheckSoundNotesIn0thMeasure(bmsonFile *BmsonFile) *soundNotesIn0thMeasure {
-	firstBarY := 0
-	for _, line := range bmsonFile.Lines { // ソートが必要？
-		if line.Y > 0 {
-			firstBarY = line.Y
-			break
-		}
-	}
-	detectedSoundNotes := []soundNote{}
-	for ci, soundChannel := range bmsonFile.Sound_channels {
-		for ni, note := range soundChannel.Notes {
-			if x, ok := note.X.(float64); ok && x > 0 && note.Y < firstBarY {
-				detectedSoundNotes = append(detectedSoundNotes, soundNote{
-					fileName: soundChannel.Name, channelIndex: ci, note: note, noteIndex: ni})
-			}
-		}
-	}
-	if len(detectedSoundNotes) > 0 {
-		return &soundNotesIn0thMeasure{soundNotes: detectedSoundNotes}
-	}
-	return nil
 }
 
 type placedUndefinedBgaIds struct {
@@ -1105,6 +1058,58 @@ func CheckDuplicateY(bmsonFile *BmsonFile) (yds []yDuplicate) {
 	return yds
 }
 
+type soundNote struct {
+	fileName     string
+	channelIndex int
+	note         bmson.Note
+	noteIndex    int
+}
+
+func (n soundNote) string() string {
+	return fmt.Sprintf("sound_channels[%d](%s)[%d] {x:%v, y:%d}", n.channelIndex, n.fileName, n.noteIndex, n.note.X, n.note.Y)
+}
+
+type soundNotesIn0thMeasure struct {
+	soundNotes []soundNote
+}
+
+func (sn soundNotesIn0thMeasure) Log() Log {
+	log := Log{
+		Level:      Warning,
+		Message:    "Note exists in 0th measure",
+		Message_ja: "0小節目にノーツが配置されています",
+		SubLogs:    []string{},
+		SubLogType: List,
+	}
+	for _, soundNote := range sn.soundNotes {
+		log.SubLogs = append(log.SubLogs, soundNote.string())
+	}
+	return log
+}
+
+func CheckSoundNotesIn0thMeasure(bmsonFile *BmsonFile) *soundNotesIn0thMeasure {
+	firstBarY := 0
+	for _, line := range bmsonFile.Lines { // ソートが必要？
+		if line.Y > 0 {
+			firstBarY = line.Y
+			break
+		}
+	}
+	detectedSoundNotes := []soundNote{}
+	for ci, soundChannel := range bmsonFile.Sound_channels {
+		for ni, note := range soundChannel.Notes {
+			if x, ok := note.X.(float64); ok && x > 0 && note.Y < firstBarY {
+				detectedSoundNotes = append(detectedSoundNotes, soundNote{
+					fileName: soundChannel.Name, channelIndex: ci, note: note, noteIndex: ni})
+			}
+		}
+	}
+	if len(detectedSoundNotes) > 0 {
+		return &soundNotesIn0thMeasure{soundNotes: detectedSoundNotes}
+	}
+	return nil
+}
+
 type outOfLaneNotes struct {
 	soundNotes []soundNote
 	mode_hint  string
@@ -1306,9 +1311,4 @@ func CheckWithoutKeysoundBmson(bmsonFile *BmsonFile, wavFileIsExist func(string)
 	}
 
 	return wm, wn
-}
-
-// 小数点以下の無駄な0を消去して整える
-func formatFloat(f float64) string {
-	return strconv.FormatFloat(f, 'f', -1, 64)
 }
