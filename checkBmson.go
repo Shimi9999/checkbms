@@ -632,6 +632,7 @@ func CheckBmsonFile(bmsonFile *BmsonFile) {
 	bmsonFile.Logs.addResultLogs(CheckBgaHeaderIdIsDuplicate(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckDuplicateY(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckSoundNotesIn0thMeasure(bmsonFile))
+	bmsonFile.Logs.addResultLogs(CheckFirstNoteHasContinueFlag(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckOutOfLaneNotes(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckNoteInLNBmson(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckWithoutKeysoundBmson(bmsonFile, nil))
@@ -1108,6 +1109,32 @@ func CheckSoundNotesIn0thMeasure(bmsonFile *BmsonFile) *soundNotesIn0thMeasure {
 		return &soundNotesIn0thMeasure{soundNotes: detectedSoundNotes}
 	}
 	return nil
+}
+
+type firstNoteHasContinueFlag struct {
+	soundChannel *bmson.SoundChannel
+	index        int
+}
+
+func (f firstNoteHasContinueFlag) Log() Log {
+	chStr := fmt.Sprintf("sound_channels[%d](%s)", f.index, f.soundChannel.Name)
+	return Log{
+		Level:      Warning,
+		Message:    fmt.Sprintf("First note of sound channel(%s[0]) has c:true", chStr),
+		Message_ja: fmt.Sprintf("サウンドチャンネルの最初のノーツ(%s[0])がc:trueになっています", chStr),
+	}
+}
+
+func CheckFirstNoteHasContinueFlag(bmsonFile *BmsonFile) (fcs []firstNoteHasContinueFlag) {
+	for ci, soundChannel := range bmsonFile.Sound_channels {
+		if len(soundChannel.Notes) > 0 {
+			if soundChannel.Notes[0].C == true {
+				fcs = append(fcs, firstNoteHasContinueFlag{
+					soundChannel: &bmsonFile.Sound_channels[ci], index: ci})
+			}
+		}
+	}
+	return fcs
 }
 
 type outOfLaneNotes struct {
