@@ -66,70 +66,9 @@ func (bmsonFile *BmsonFile) ScanBmsonFile() error {
 		bmsonFile.TotalNotes = totalNotes
 	}()
 
-	bmsonFile.Logs.addResultLogs(CheckAndDeleteOutOfLaneNotes(bmsonFile))
-
 	return nil
 }
 
-
-type outOfLaneNotes struct {
-	soundNotes []soundNote
-	mode_hint  string
-}
-
-func (n outOfLaneNotes) Log() Log {
-	log := Log{
-		Level:      Warning,
-		Message:    "note.x is out of lane range",
-		Message_ja: "ノーツのx位置がレーンの範囲外です",
-		SubLogs:    []string{},
-		SubLogType: List,
-	}
-	for _, soundNote := range n.soundNotes {
-		log.SubLogs = append(log.SubLogs, soundNote.string())
-	}
-	return log
-}
-
-func isXInLane(x, keymode int) bool {
-	switch keymode {
-	case 5:
-		return x >= 1 && x <= 5 || x == 8
-	case 7:
-		return x >= 1 && x <= 8
-	case 10:
-		return x >= 1 && x <= 5 || x >= 8 && x <= 13 || x == 16
-	case 14:
-		return x >= 1 && x <= 16
-	case 9:
-		return x >= 1 && x <= 9
-	case 24:
-		return x >= 1 && x <= 26
-	case 48:
-		return x >= 1 && x <= 52
-	}
-	return false
-}
-
-func CheckAndDeleteOutOfLaneNotes(bmsonFile *BmsonFile) (on *outOfLaneNotes) {
-	outNotes := []soundNote{}
-	for ci, soundChannel := range bmsonFile.Sound_channels {
-		okNotes := []bmson.Note{}
-		for ni, note := range soundChannel.Notes {
-			if x, ok := note.X.(float64); ok && x-math.Floor(x) == 0 && (x == 0 || isXInLane(int(x), bmsonFile.Keymode)) {
-				okNotes = append(okNotes, note)
-			} else {
-				outNotes = append(outNotes, soundNote{
-					fileName: soundChannel.Name, channelIndex: ci, note: note, noteIndex: ni})
-			}
-			bmsonFile.Sound_channels[ci].Notes = append([]bmson.Note{}, okNotes...)
-		}
-	}
-	if len(outNotes) > 0 {
-		on = &outOfLaneNotes{soundNotes: outNotes, mode_hint: bmsonFile.Info.Mode_hint}
-	}
-	return on
-}
 
 type invalidField struct {
 	fieldName    string
@@ -693,6 +632,7 @@ func CheckBmsonFile(bmsonFile *BmsonFile) {
 	bmsonFile.Logs.addResultLogs(CheckDefinedUnplacedBgaHeader(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckBgaHeaderIdIsDuplicate(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckDuplicateY(bmsonFile))
+	bmsonFile.Logs.addResultLogs(CheckOutOfLaneNotes(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckNoteInLNBmson(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckWithoutKeysoundBmson(bmsonFile, nil))
 }
@@ -1165,6 +1105,62 @@ func CheckDuplicateY(bmsonFile *BmsonFile) (yds []yDuplicate) {
 	return yds
 }
 
+type outOfLaneNotes struct {
+	soundNotes []soundNote
+	mode_hint  string
+}
+
+func (n outOfLaneNotes) Log() Log {
+	log := Log{
+		Level:      Warning,
+		Message:    "note.x is out of lane range",
+		Message_ja: "ノーツのx位置がレーンの範囲外です",
+		SubLogs:    []string{},
+		SubLogType: List,
+	}
+	for _, soundNote := range n.soundNotes {
+		log.SubLogs = append(log.SubLogs, soundNote.string())
+	}
+	return log
+}
+
+func isXInLane(x, keymode int) bool {
+	switch keymode {
+	case 5:
+		return x >= 1 && x <= 5 || x == 8
+	case 7:
+		return x >= 1 && x <= 8
+	case 10:
+		return x >= 1 && x <= 5 || x >= 8 && x <= 13 || x == 16
+	case 14:
+		return x >= 1 && x <= 16
+	case 9:
+		return x >= 1 && x <= 9
+	case 24:
+		return x >= 1 && x <= 26
+	case 48:
+		return x >= 1 && x <= 52
+	}
+	return false
+}
+
+func CheckOutOfLaneNotes(bmsonFile *BmsonFile) (on *outOfLaneNotes) {
+	outNotes := []soundNote{}
+	for ci, soundChannel := range bmsonFile.Sound_channels {
+		for ni, note := range soundChannel.Notes {
+			if x, ok := note.X.(float64); ok && x-math.Floor(x) == 0 && (x == 0 || isXInLane(int(x), bmsonFile.Keymode)) {
+			} else {
+				outNotes = append(outNotes, soundNote{
+					fileName: soundChannel.Name, channelIndex: ci, note: note, noteIndex: ni})
+			}
+		}
+	}
+	if len(outNotes) > 0 {
+		on = &outOfLaneNotes{soundNotes: outNotes, mode_hint: bmsonFile.Info.Mode_hint}
+	}
+	return on
+}
+
 type noteInLNBmson struct {
 	containedNote *soundNote
 	ln            *soundNote
@@ -1190,7 +1186,7 @@ func CheckNoteInLNBmson(bmsonFile *BmsonFile) (nls []noteInLNBmson) {
 	soundNotes := make([][]soundNote, laneNum)
 	for ci, soundChannel := range bmsonFile.Sound_channels {
 		for ni, note := range soundChannel.Notes {
-			if x, ok := note.X.(float64); ok && x-math.Floor(x) == 0 && x > 0 /*&& int(x) <= laneNum*/ { // TODO xのチェック不要？
+			if x, ok := note.X.(float64); ok && x-math.Floor(x) == 0 && x > 0 && isXInLane(int(x), bmsonFile.Keymode) {
 				xIndex := int(x) - 1
 				soundNotes[xIndex] = append(soundNotes[xIndex], soundNote{
 					fileName: soundChannel.Name, channelIndex: ci, note: note, noteIndex: ni})
