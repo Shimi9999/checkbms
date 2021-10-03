@@ -590,6 +590,18 @@ var structRules = map[string]structRule{
 	"bmson.BmsonInfo Preview_music":  {Path, AUDIO_EXTS, nil},
 	"bmson.BmsonInfo Resolution":     {Int, []int{math.MinInt64, math.MaxInt64}, 240},
 	"bmson.BmsonInfo Ln_type":        {Int, []int{0, 3}, nil},
+	"bmson.BarLine Y":                {Int, []int{0, math.MaxInt64}, nil},
+	"bmson.SoundChannel Name":        {Path, AUDIO_EXTS, nil},
+	"bmson.Note Y":                   {Int, []int{0, math.MaxInt64}, nil},
+	"bmson.Note L":                   {Int, []int{0, math.MaxInt64}, nil},
+	"bmson.Note T":                   {Int, []int{0, 3}, nil},
+	"bmson.BpmEvent Y":               {Int, []int{0, math.MaxInt64}, nil},
+	"bmson.BpmEvent Bpm":             {Float, []float64{math.SmallestNonzeroFloat64, math.MaxFloat64}, nil},
+	"bmson.StopEvent Y":              {Int, []int{0, math.MaxInt64}, nil},
+	"bmson.StopEvent Duration":       {Int, []int{0, math.MaxInt64}, nil},
+	"bmson.BGAHeader Name":           {Path, append(IMAGE_EXTS, MOVIE_EXTS...), nil},
+	"bmson.BGAEvent Y":               {Int, []int{0, math.MaxInt64}, nil},
+	"bmson.ScrollEvent Y":            {Int, []int{0, math.MaxInt64}, nil},
 }
 
 func ScanBmson(bytes []byte) (bmsonData *bmson.Bmson, logs Logs, _ error) {
@@ -632,8 +644,8 @@ func CheckBmsonFile(bmsonFile *BmsonFile) {
 
 	bmsonFile.Logs.addResultLogs(CheckBmsonInfo(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckTitleTextsAreDuplicate(bmsonFile))
-	bmsonFile.Logs.addResultLogs(CheckSoundChannelNameIsInvalid(bmsonFile))
-	bmsonFile.Logs.addResultLogs(CheckNonNotesSoundChannel(bmsonFile))
+	//bmsonFile.Logs.addResultLogs(CheckSoundChannelNameIsInvalid(bmsonFile))
+	//bmsonFile.Logs.addResultLogs(CheckNonNotesSoundChannel(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckNoWavSoundChannels(bmsonFile))
 	bmsonFile.Logs.addResultLogs(CheckTotalnotesIsZero(&bmsonFile.BmsFileBase))
 	bmsonFile.Logs.addResultLogs(CheckPlacedUndefiedBgaIds(bmsonFile))
