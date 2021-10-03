@@ -158,8 +158,8 @@ type invalidType struct {
 func (i invalidType) Log() Log {
 	return Log{
 		Level:      Error,
-		Message:    fmt.Sprintf("%s has invalid value: %v", i.fieldName, i.value),
-		Message_ja: fmt.Sprintf("%sが無効な値です: %v", i.fieldName, i.value),
+		Message:    fmt.Sprintf("%s has invalid value (type error): %v", i.fieldName, i.value),
+		Message_ja: fmt.Sprintf("%sが無効な値です (型エラー): %v", i.fieldName, i.value),
 	}
 }
 
@@ -376,21 +376,75 @@ func unmarshalBmson(bytes []byte) (validationBmson interface{}, ifs []invalidFie
 	return validationBmson, ifs, its, dfs, nil
 }
 
-type requiredNilValue struct {
+type nilValue struct {
 	fieldName string
+	level     AlertLevel
 }
 
-func (v requiredNilValue) Log() Log {
+func (v nilValue) Log() Log {
+	log := Log{
+		Level:      v.level,
+		Message:    fmt.Sprintf("%s has no value", v.fieldName),
+		Message_ja: fmt.Sprintf("%sに値がありません", v.fieldName),
+	}
+	if v.level == Error {
+		log.Message = fmt.Sprintf("%s is required, but has no value", v.fieldName)
+		log.Message_ja = fmt.Sprintf("%sは必須ですが、値がありません", v.fieldName)
+	}
+	return log
+}
+
+type emptyValue struct {
+	fieldName string
+	level     AlertLevel
+}
+
+func (v emptyValue) Log() Log {
+	log := Log{
+		Level:      v.level,
+		Message:    fmt.Sprintf("%s value is empty", v.fieldName),
+		Message_ja: fmt.Sprintf("%sの値が空です", v.fieldName),
+	}
+	if v.level == Error {
+		log.Message = fmt.Sprintf("%s is required, but empty", v.fieldName)
+		log.Message_ja = fmt.Sprintf("%sは必須ですが、値が空です", v.fieldName)
+	}
+	return log
+}
+
+type outOfRangeValue struct {
+	fieldName string
+	value     interface{}
+}
+
+func (v outOfRangeValue) Log() Log {
 	return Log{
 		Level:      Error,
-		Message:    fmt.Sprintf("%s is required, but is none", v.fieldName),
-		Message_ja: fmt.Sprintf("%sは必須ですが、値がありません", v.fieldName),
+		Message:    fmt.Sprintf("%s has invalid value (out of range): %v", v.fieldName, v.value),
+		Message_ja: fmt.Sprintf("%sが無効な値です (定義範囲外): %v", v.fieldName, v.value),
 	}
 }
 
-func convertBmson(_bmson interface{}) (bmsonData *bmson.Bmson, rns []requiredNilValue) {
-	requiredButNil := func(fieldName string) {
-		rns = append(rns, requiredNilValue{fieldName: fieldName})
+func convertBmson(_bmson interface{}) (bmsonData *bmson.Bmson, rns []nilValue, evs []emptyValue, ovs []outOfRangeValue) {
+	getFieldDefaultValue := func(ruleKey string) reflect.Value {
+		if rule, ok := structRules[ruleKey]; ok {
+			defaultValue := rule.defaultValue
+			if defaultValue != nil {
+				var dvv reflect.Value
+				switch v := defaultValue.(type) {
+				case string:
+					dvv = reflect.ValueOf(&v)
+				case int:
+					dvv = reflect.ValueOf(&v)
+				case float64:
+					dvv = reflect.ValueOf(&v)
+				case bool:
+					dvv = reflect.ValueOf(&v)
+				}
+				return dvv.Elem()
+			}
+		}
+		return reflect.Value{}
 	}
 
 	var convert func(sourceValue reflect.Value, targetType reflect.Type, fieldName string) reflect.Value
@@ -414,11 +468,12 @@ func convertBmson(_bmson interface{}) (bmsonData *bmson.Bmson, rns []requiredNil
 		case reflect.Struct:
 			structVal := reflect.New(targetType).Elem()
 			for i := 0; i < sourceValue.NumField(); i++ {
-				fieldValue := sourceValue.Field(i)
-				fieldType := targetType.Field(i)
-				fullFieldName := fieldName + "." + strings.ToLower(fieldType.Name)
-				if fieldValue.IsValid() {
-					cv := convert(fieldValue, targetType.Field(i).Type, fullFieldName)
+				sourceFieldValue := sourceValue.Field(i)
+				targetStructField := targetType.Field(i)
+				fullFieldName := fieldName + "." + strings.ToLower(targetStructField.Name)
+				ruleKey := fmt.Sprintf("%v %s", targetType, targetStructField.Name)
+				if sourceFieldValue.IsValid() {
+					cv := convert(sourceFieldValue, targetStructField.Type, fullFieldName)
 					if cv.IsValid() {
 						if structVal.Field(i).Kind() == reflect.Ptr || structVal.Field(i).Kind() == reflect.Slice {
 							structVal.Field(i).Set(cv)
@@ -426,14 +481,53 @@ func convertBmson(_bmson interface{}) (bmsonData *bmson.Bmson, rns []requiredNil
 							structVal.Field(i).Set(cv.Elem())
 						}
 
-						if cv.Kind() == reflect.Slice && cv.Len() == 0 &&
-							fieldType.Tag.Get("validate") == "required" {
-							requiredButNil(fullFieldName)
+						targetValue := cv
+						if targetValue.Kind() == reflect.Ptr && targetValue.Kind() != reflect.Slice {
+							targetValue = targetValue.Elem()
+						}
+
+						// empty
+						if targetValue.Kind() == reflect.String && targetValue.IsZero() ||
+							targetValue.Kind() == reflect.Slice && targetValue.Len() == 0 {
+							switch targetStructField.Tag.Get("necessity") {
+							case "necessary":
+								evs = append(evs, emptyValue{fieldName: fullFieldName, level: Error})
+							case "semi-necessary":
+								evs = append(evs, emptyValue{fieldName: fullFieldName, level: Warning})
+							}
+						} else if rule, ok := structRules[ruleKey]; ok { // out of range
+							isInRange, err := rule.isInRange(targetValue.Interface())
+							if err != nil {
+								fmt.Println("Debug: rule.isInRange error:", fullFieldName, targetValue, err)
+							} else if !isInRange {
+								ovs = append(ovs, outOfRangeValue{fieldName: fullFieldName, value: targetValue.Interface()})
+							}
 						}
 					} else {
 						// nil値
-						if fieldType.Tag.Get("validate") == "required" {
-							requiredButNil(fullFieldName)
+						switch targetStructField.Tag.Get("necessity") {
+						case "necessary":
+							rns = append(rns, nilValue{fieldName: fullFieldName, level: Error})
+
+							// 必須の構造体ポインタ型が空の場合は初期化する
+							if targetStructField.Type.Kind() == reflect.Ptr && targetStructField.Type.Elem().Kind() == reflect.Struct {
+								newStructType := targetStructField.Type.Elem()
+								newStruct := reflect.New(newStructType).Elem()
+								for ni := 0; ni < newStructType.NumField(); ni++ {
+									newRuleKey := fmt.Sprintf("%v %s", newStructType, newStructType.Field(ni).Name)
+									if dv := getFieldDefaultValue(newRuleKey); dv.IsValid() {
+										newStruct.Field(ni).Set(dv)
+									}
+								}
+								structVal.Field(i).Set(newStruct.Addr())
+							}
+						case "semi-necessary":
+							rns = append(rns, nilValue{fieldName: fullFieldName, level: Warning})
+						}
+
+						// 初期値をセット
+						if dv := getFieldDefaultValue(ruleKey); dv.IsValid() {
+							structVal.Field(i).Set(dv)
 						}
 					}
 				} else {
@@ -458,12 +552,96 @@ func convertBmson(_bmson interface{}) (bmsonData *bmson.Bmson, rns []requiredNil
 
 	cv := convert(reflect.ValueOf(_bmson), reflect.TypeOf(bmson.Bmson{}), "root")
 	bmsonData = cv.Interface().(*bmson.Bmson)
-	if bmsonData.Info == nil {
-		bmsonData.Info = &bmson.BmsonInfo{
-			Mode_hint: "beat-7k",
+
+	return bmsonData, rns, evs, ovs
+}
+
+type structRule struct {
+	fieldType    CommandType
+	safeValues   interface{}
+	defaultValue interface{}
+}
+
+func (r structRule) isInRange(value interface{}) (bool, error) {
+	argumentError := fmt.Errorf("Error isInRange: argument value is invalid")
+	safeValuesError := fmt.Errorf("Error isInRange: safeValues is invalid")
+	switch r.fieldType {
+	case Int:
+		intValue, ok := value.(int)
+		if !ok {
+			return false, argumentError
+		}
+		if bv, ok := r.safeValues.([]int); ok && len(bv) == 2 {
+			if intValue >= bv[0] && intValue <= bv[1] {
+				return true, nil
+			} else {
+				return false, nil
+			}
+		} else {
+			return false, safeValuesError
+		}
+	case Float:
+		floatValue, ok := value.(float64)
+		if !ok {
+			return false, argumentError
+		}
+		if bv, ok := r.safeValues.([]float64); ok && len(bv) == 2 {
+			if floatValue >= bv[0] && floatValue <= bv[1] {
+				return true, nil
+			} else {
+				return false, nil
+			}
+		} else {
+			return false, safeValuesError
+		}
+	case String:
+		stringValue, ok := value.(string)
+		if !ok {
+			return false, argumentError
+		}
+		if svs, ok := r.safeValues.([]string); ok && len(svs) >= 1 {
+			for _, sv := range svs {
+				if regexp.MustCompile(sv).MatchString(stringValue) {
+					return true, nil
+				}
+			}
+		} else {
+			return false, safeValuesError
+		}
+		return false, nil
+	case Path:
+		pathValue, ok := value.(string)
+		if !ok {
+			return false, argumentError
+		}
+		if bv, ok := r.safeValues.([]string); ok && len(bv) >= 1 {
+			for _, ext := range bv {
+				if strings.ToLower(filepath.Ext(pathValue)) == ext {
+					return true, nil
+				}
+			}
+			return false, nil
+		} else {
+			return false, safeValuesError
 		}
 	}
-	return bmsonData, rns
+	return false, nil
+}
+
+var structRules = map[string]structRule{
+	"bmson.Bmson Version":            {String, []string{"1.0.0"}, "1.0.0"},
+	"bmson.BmsonInfo Mode_hint":      {String, []string{`^beat-\d+k$`, `^popn-\d+k$`, `^keyboard-\d+k$`, `generic-\d+keys$`}, "beat-7k"},
+	"bmson.BmsonInfo Level":          {Int, []int{0, math.MaxInt64}, nil},
+	"bmson.BmsonInfo Init_bpm":       {Float, []float64{math.SmallestNonzeroFloat64, math.MaxFloat64}, nil},
+	"bmson.BmsonInfo Judge_rank":     {Float, []float64{math.SmallestNonzeroFloat64, math.MaxFloat64}, 100.0},
+	"bmson.BmsonInfo Total":          {Float, []float64{0, math.MaxFloat64}, 100.0},
+	"bmson.BmsonInfo Back_image":     {Path, IMAGE_EXTS, nil},
+	"bmson.BmsonInfo Eyecatch_image": {Path, IMAGE_EXTS, nil},
+	"bmson.BmsonInfo Title_image":    {Path, IMAGE_EXTS, nil},
+	"bmson.BmsonInfo Banner_image":   {Path, IMAGE_EXTS, nil},
+	"bmson.BmsonInfo Preview_music":  {Path, AUDIO_EXTS, nil},
+	"bmson.BmsonInfo Resolution":     {Int, []int{math.MinInt64, math.MaxInt64}, 240},
+	"bmson.BmsonInfo Ln_type":        {Int, []int{0, 3}, nil},
 }
 
 func ScanBmson(bytes []byte) (bmsonData *bmson.Bmson, logs Logs, _ error) {
@@ -493,8 +671,8 @@ func ScanBmson(bytes []byte) (bmsonData *bmson.Bmson, logs Logs, _ error) {
 
 	// ValidationBmsonをBmsonに変換する
 	// 変換前の値がnilの場合はゼロ値が入る
-	bmsonData, rns := convertBmson(validationBmson)
-	logs.addResultLog(rns)
+	bmsonData, rns, evs, ovs := convertBmson(validationBmson)
+	logs.addResultLogs(rns, evs, ovs)
 
 	return bmsonData, logs, nil
 }
@@ -519,27 +697,6 @@ func CheckBmsonFile(bmsonFile *BmsonFile) {
 	bmsonFile.Logs.addResultLogs(CheckWithoutKeysoundBmson(bmsonFile, nil))
 }
 
-var infoFields = []Command{
-	{"title", String, Necessary, nil},
-	{"subtitle", String, Unnecessary, nil},
-	{"artist", String, Semi_necessary, nil},
-	{"subartists", String, Unnecessary, nil}, // Strings型用意する?
-	{"genre", String, Semi_necessary, nil},
-	{"mode_hint", String, Semi_necessary, []string{`^beat-\d+k$`, `^popn-\d+k$`, `^keyboard-\d+k$`, `generic-\d+keys$`}},
-	{"chart_name", String, Unnecessary, nil},
-	{"level", Int, Semi_necessary, []int{0, math.MaxInt64}},
-	{"init_bpm", Float, Necessary, []float64{math.SmallestNonzeroFloat64, math.MaxFloat64}},
-	{"judge_rank", Float, Semi_necessary, []float64{math.SmallestNonzeroFloat64, math.MaxFloat64}},
-	{"total", Float, Semi_necessary, []float64{0, math.MaxFloat64}},
-	{"back_image", Path, Unnecessary, IMAGE_EXTS},
-	{"eyecatch_image", Path, Unnecessary, IMAGE_EXTS},
-	{"title_image", Path, Unnecessary, IMAGE_EXTS},
-	{"banner_image", Path, Unnecessary, IMAGE_EXTS},
-	{"preview_music", Path, Unnecessary, AUDIO_EXTS},
-	{"resolution", Int, Unnecessary, []int{1, math.MaxInt64}},
-	{"ln_type", Int, Unnecessary, []int{0, 3}},
-}
-
 func CheckBmsonInfo(bmsonFile *BmsonFile) (logs Logs) {
 	iv := reflect.ValueOf(bmsonFile.Info).Elem()
 	it := iv.Type()
@@ -548,47 +705,7 @@ func CheckBmsonInfo(bmsonFile *BmsonFile) (logs Logs) {
 		fv := iv.Field(i)
 		keyName := strings.ToLower(ft.Name)
 
-		isEmptyValue := func(val reflect.Value) bool {
-			return ft.Type.Kind() == reflect.String && fv.String() == ""
-		}
-
-		isInvalidValue := func(val reflect.Value) (_ bool, valStr string) {
-			switch ft.Type.Kind() {
-			case reflect.String:
-				valStr = fv.String()
-			case reflect.Int:
-				valStr = strconv.Itoa(int(fv.Int()))
-			case reflect.Float64:
-				valStr = strconv.FormatFloat(fv.Float(), 'f', -1, 64)
-			case reflect.Slice:
-				for j := 0; j < fv.Len(); j++ {
-					if fv.Index(j).Type().Kind() == reflect.String {
-						if valStr != "" {
-							valStr += " "
-						}
-						valStr += fv.Index(j).String()
-					}
-				}
-			}
-			isInRange, err := infoFields[i].isInRange(valStr)
-			return err != nil || !isInRange, valStr
-		}
-
-		if isEmptyValue(fv) {
-			if infoFields[i].Necessity != Unnecessary {
-				logs = append(logs, Log{
-					Level:      Warning,
-					Message:    fmt.Sprintf("info.%s value is empty", keyName),
-					Message_ja: fmt.Sprintf("info.%sの値が空です", keyName),
-				})
-			}
-		} else if is, valStr := isInvalidValue(fv); is {
-			logs = append(logs, Log{
-				Level:      Error,
-				Message:    fmt.Sprintf("info.%s has invalid value: %s", keyName, valStr),
-				Message_ja: fmt.Sprintf("info.%sが無効な値です: %s", keyName, valStr),
-			})
-		} else if keyName == "judge_rank" {
+		if keyName == "judge_rank" {
 			judgeRank := fv.Float()
 			if judgeRank >= 125 {
 				logs = append(logs, Log{
