@@ -13,6 +13,7 @@ import (
 // 音声、画像、動画ファイルを比較する時は、パスの拡張子を取り除き、名前だけで比較する。
 // bmsfileは同名ファイルでsha256の比較をする。一致しなかった場合はファイル記述内容のdiffをとる。
 func DiffBmsDirectories(dirPath1, dirPath2 string) (result *DiffBmsDirResult, _ error) {
+	dirPath1, dirPath2 = filepath.Clean(dirPath1), filepath.Clean(dirPath2)
 	const dirlen int = 2
 	dirPaths := [dirlen]string{dirPath1, dirPath2}
 	for _, dirPath := range dirPaths {
@@ -32,12 +33,12 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (result *DiffBmsDirResult, _ 
 
 	type compareFile struct {
 		File
-		ComparePath string
-		BmsFileData *BmsFile
-		Text        *string
+		ComparePath     string
+		BmsFileBaseData *BmsFileBase
+		Text            *string
 	}
 	type compareDirectory struct {
-		BmsFiles    []compareFile
+		BmsFiles    []compareFile // bms+bmson
 		AudioFiles  []compareFile
 		ImageFiles  []compareFile
 		MovieFiles  []compareFile
@@ -52,7 +53,11 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (result *DiffBmsDirResult, _ 
 	for i := 0; i < dirlen; i++ {
 		for j, bmsFile := range bmsDirs[i].BmsFiles {
 			bmsFile.Path = removeRootDirPath(bmsFile.Path, dirPaths[i])
-			comDirs[i].BmsFiles = append(comDirs[i].BmsFiles, compareFile{File: bmsFile.File, ComparePath: bmsFile.Path, BmsFileData: &bmsDirs[i].BmsFiles[j]})
+			comDirs[i].BmsFiles = append(comDirs[i].BmsFiles, compareFile{File: bmsFile.File, ComparePath: bmsFile.Path, BmsFileBaseData: &bmsDirs[i].BmsFiles[j].BmsFileBase})
+		}
+		for j, bmsonFile := range bmsDirs[i].BmsonFiles {
+			bmsonFile.Path = removeRootDirPath(bmsonFile.Path, dirPaths[i])
+			comDirs[i].BmsFiles = append(comDirs[i].BmsFiles, compareFile{File: bmsonFile.File, ComparePath: bmsonFile.Path, BmsFileBaseData: &bmsDirs[i].BmsonFiles[j].BmsFileBase})
 		}
 		for _, dir := range bmsDirs[i].Directories {
 			dir.Path = removeRootDirPath(dir.Path, dirPaths[i])
@@ -101,6 +106,25 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (result *DiffBmsDirResult, _ 
 		comDirs[i].Directories = sortSliceWithPath(comDirs[i].Directories)
 	}
 
+	trimCommonDir := func(path1, path2 string) (shortPath1, shortPath2 string) {
+		dirs1, dirs2 := strings.Split(path1, "\\"), strings.Split(path2, "\\")
+		minLen := len(dirs1)
+		if len(dirs2) < minLen {
+			minLen = len(dirs2)
+		}
+		i := 0
+		for ; i < minLen; i++ {
+			if dirs1[i] != dirs2[i] {
+				break
+			}
+		}
+		commonDir := strings.Join(dirs1[:i], "\\")
+		shortPath1 = strings.TrimLeft(path1[len(commonDir):], "\\") + "\\"
+		shortPath2 = strings.TrimLeft(path2[len(commonDir):], "\\") + "\\"
+		return shortPath1, shortPath2
+	}
+	shortDirPath1, shortDirPath2 := trimCommonDir(dirPath1, dirPath2)
+
 	result = &DiffBmsDirResult{DirPath1: dirPath1, DirPath2: dirPath2}
 	comFileSlices1 := []([]compareFile){comDirs[0].BmsFiles, comDirs[0].AudioFiles, comDirs[0].ImageFiles, comDirs[0].MovieFiles, comDirs[0].OtherFiles, comDirs[0].Directories}
 	comFileSlices2 := []([]compareFile){comDirs[1].BmsFiles, comDirs[1].AudioFiles, comDirs[1].ImageFiles, comDirs[1].MovieFiles, comDirs[1].OtherFiles, comDirs[1].Directories}
@@ -108,19 +132,15 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (result *DiffBmsDirResult, _ 
 		comFiles1, comFiles2 := comFileSlices1[i], comFileSlices2[i]
 		i2init := 0
 		for i1 := 0; i1 < len(comFiles1); i1++ {
-			if i2init == len(comFiles2) {
-				result.missingFiles2 = append(result.missingFiles2, missingFile{dirPath: dirPath2, missingFilePath: comFiles1[i1].Path})
-				continue
-			}
 			for i2 := i2init; i2 < len(comFiles2); i2++ {
 				if comFiles1[i1].ComparePath == comFiles2[i2].ComparePath {
-					if comFiles1[i1].BmsFileData != nil && comFiles2[i2].BmsFileData != nil {
-						if comFiles1[i1].BmsFileData.Sha256 != comFiles2[i2].BmsFileData.Sha256 {
+					if comFiles1[i1].BmsFileBaseData != nil && comFiles2[i2].BmsFileBaseData != nil {
+						if comFiles1[i1].BmsFileBaseData.Sha256 != comFiles2[i2].BmsFileBaseData.Sha256 {
 							// TODO: ここでファイル内容diff?
 							result.hashIsNotEquals = append(result.hashIsNotEquals, hashIsNotEqual{
 								path:     comFiles1[i1].Path,
-								dirPath1: dirPath1, bmsFile1: comFiles1[i1].BmsFileData,
-								dirPath2: dirPath2, bmsFile2: comFiles2[i2].BmsFileData,
+								dirPath1: shortDirPath1, bmsFileBase1: comFiles1[i1].BmsFileBaseData,
+								dirPath2: shortDirPath2, bmsFileBase2: comFiles2[i2].BmsFileBaseData,
 							})
 						}
 					}
@@ -129,20 +149,21 @@ func DiffBmsDirectories(dirPath1, dirPath2 string) (result *DiffBmsDirResult, _ 
 							result.textIsNotEquals = append(result.textIsNotEquals, textIsNotEqual{path: comFiles1[i1].Path})
 						}
 					}
-					i2init = i2 + 1
+					comFiles1 = comFiles1[:i1+copy(comFiles1[i1:], comFiles1[i1+1:])]
+					comFiles2 = comFiles2[:i2+copy(comFiles2[i2:], comFiles2[i2+1:])]
+					i1--
+					i2init = i2
 					break
-				} else {
-					if comFiles1[i1].ComparePath < comFiles2[i2].ComparePath {
-						result.missingFiles2 = append(result.missingFiles2, missingFile{dirPath: dirPath2, missingFilePath: comFiles1[i1].Path})
-						break
-					} else {
-						result.missingFiles1 = append(result.missingFiles1, missingFile{dirPath: dirPath1, missingFilePath: comFiles2[i2].Path})
-					}
+				} else if comFiles1[i1].ComparePath < comFiles2[i2].ComparePath {
+					break
 				}
 			}
 		}
-		for i2 := i2init; i2 < len(comFiles2); i2++ {
-			result.missingFiles1 = append(result.missingFiles1, missingFile{dirPath: dirPath1, missingFilePath: comFiles2[i2].Path})
+		for i1 := range comFiles1 {
+			result.missingFiles2 = append(result.missingFiles2, missingFile{dirPath: shortDirPath2, missingFilePath: comFiles1[i1].Path})
+		}
+		for i2 := range comFiles2 {
+			result.missingFiles1 = append(result.missingFiles1, missingFile{dirPath: shortDirPath1, missingFilePath: comFiles2[i2].Path})
 		}
 	}
 
@@ -181,9 +202,9 @@ func (d DiffBmsDirResult) LogStringWithLang(lang string) (log string) {
 }
 
 type hashIsNotEqual struct {
-	path               string
-	dirPath1, dirPath2 string
-	bmsFile1, bmsFile2 *BmsFile
+	path                       string
+	dirPath1, dirPath2         string
+	bmsFileBase1, bmsFileBase2 *BmsFileBase
 }
 
 func (h hashIsNotEqual) Log() Log {
@@ -194,8 +215,8 @@ func (h hashIsNotEqual) Log() Log {
 		SubLogs:    []string{},
 		SubLogType: Detail,
 	}
-	log.SubLogs = append(log.SubLogs, fmt.Sprintf("%s: %s", h.dirPath1, h.bmsFile1.Sha256))
-	log.SubLogs = append(log.SubLogs, fmt.Sprintf("%s: %s", h.dirPath2, h.bmsFile2.Sha256))
+	log.SubLogs = append(log.SubLogs, fmt.Sprintf("%s: %s", h.dirPath1, h.bmsFileBase1.Sha256))
+	log.SubLogs = append(log.SubLogs, fmt.Sprintf("%s: %s", h.dirPath2, h.bmsFileBase2.Sha256))
 	return log
 }
 
