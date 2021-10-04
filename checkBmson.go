@@ -1205,8 +1205,9 @@ func isXInLane(x, keymode int) bool {
 		return x >= 1 && x <= 26
 	case 48:
 		return x >= 1 && x <= 52
+	default:
+		return x >= 1 && x <= keymode
 	}
-	return false
 }
 
 func CheckOutOfLaneNotes(bmsonFile *BmsonFile) (on *outOfLaneNotes) {
@@ -1247,7 +1248,10 @@ func (n noteInLNBmson) Log() Log {
 
 func CheckNoteInLNBmson(bmsonFile *BmsonFile) (nls []noteInLNBmson) {
 	laneNumMap := map[int]int{5: 8, 7: 8, 9: 9, 10: 16, 14: 16, 24: 26, 48: 54}
-	laneNum := laneNumMap[bmsonFile.Keymode]
+	laneNum, laneNumOk := laneNumMap[bmsonFile.Keymode]
+	if !laneNumOk {
+		laneNum = bmsonFile.Keymode + 2
+	}
 	soundNotes := make([][]soundNote, laneNum)
 	for ci, soundChannel := range bmsonFile.Sound_channels {
 		for ni, note := range soundChannel.Notes {
