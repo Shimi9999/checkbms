@@ -250,6 +250,9 @@ func CheckDefinitionsAreUnified(bmsDir *Directory) (nds []notUnifiedDefinitions)
 			}
 		}
 		for _, bmsonFile := range bmsDir.BmsonFiles {
+			if bmsonFile.IsInvalid {
+				continue
+			}
 			fieldName := strings.ToUpper(uc.bmsonField[:1]) + uc.bmsonField[1:]
 			infoValue := reflect.ValueOf(bmsonFile.Info).Elem()
 			if value := infoValue.FieldByName(fieldName); value.IsValid() {
